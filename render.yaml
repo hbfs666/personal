@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: delayed-letter
+    name: lettersys-app
     env: node
     plan: free
     buildCommand: npm install && npm run build
     startCommand: node server.js
+    healthCheckPath: /api/letters
     autoDeploy: true
     envVars:
       - key: NODE_ENV

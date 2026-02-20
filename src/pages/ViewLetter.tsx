@@ -392,7 +392,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
 
           {/* Footer */}
           <div className="bg-gray-50 p-6 text-center text-xs text-gray-500 border-t">
-            <p>❤️ 一份特別的信件</p>
+            <p>📨 一份特別的信件</p>
             <p className="mt-1">寄送於 {new Date(letter.scheduleTime).toLocaleString('zh-TW')}</p>
           </div>
         </motion.div>

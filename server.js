@@ -20,6 +20,15 @@ const hasCloudinary = Boolean(
 )
 const useCloudPersistence = hasSupabase && hasCloudinary
 
+const requiredEnvKeys = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'CLOUDINARY_CLOUD_NAME',
+  'CLOUDINARY_API_KEY',
+  'CLOUDINARY_API_SECRET'
+]
+const missingEnvKeys = requiredEnvKeys.filter((key) => !process.env[key])
+
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname
 const publicDir = path.join(__dirname, 'public')
 const uploadsDir = path.join(dataDir, 'uploads')
@@ -173,6 +182,8 @@ app.get('/api/letters', async (req, res) => {
       return res.json(data.map(mapDbLetter))
     }
 
+    console.error('Cloud read failed in GET /api/letters, fallback to local:', error)
+
     const fallbackLetters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
     return res.json(fallbackLetters)
   }
@@ -194,6 +205,7 @@ app.get('/api/letters/:id', async (req, res) => {
     if (!error && data) {
       letter = mapDbLetter(data)
     } else {
+      console.error('Cloud read failed in GET /api/letters/:id, fallback to local:', error)
       const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
       letter = letters.find(l => l.id === req.params.id)
     }
@@ -219,13 +231,46 @@ app.get('/api/letters/:id', async (req, res) => {
   })
 })
 
-app.get('/api/health', (req, res) => {
-  res.json({
+app.get('/api/health', async (req, res) => {
+  const basePayload = {
     ok: true,
     mode: useCloudPersistence ? 'cloud' : 'local',
+    cloudReady: useCloudPersistence,
     hasSupabase,
-    hasCloudinary
-  })
+    hasCloudinary,
+    missingEnvKeys
+  }
+
+  if (!useCloudPersistence) {
+    return res.json({
+      ...basePayload,
+      reason: missingEnvKeys.length > 0 ? 'missing_required_env_keys' : 'cloud_clients_not_initialized'
+    })
+  }
+
+  try {
+    const [dbCheck, cloudinaryCheck] = await Promise.all([
+      supabase.from('letters').select('id').limit(1),
+      cloudinary.api.ping()
+    ])
+
+    if (dbCheck.error) {
+      throw new Error(`Supabase check failed: ${dbCheck.error.message}`)
+    }
+
+    return res.json({
+      ...basePayload,
+      supabase: { ok: true },
+      cloudinary: { ok: true, status: cloudinaryCheck?.status || 'ok' }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      ...basePayload,
+      ok: false,
+      cloudReady: false,
+      message: error.message
+    })
+  }
 })
 
 app.post('/api/letters', (req, res) => {

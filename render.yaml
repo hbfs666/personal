@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: delayed-letter
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: delayed-letter-data
+      mountPath: /var/data
+      sizeGB: 1

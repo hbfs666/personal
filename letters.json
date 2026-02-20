@@ -1,0 +1,80 @@
+[
+  {
+    "id": "3b7a4c16-61d1-4bdd-9205-0af2004994e0",
+    "senderName": "a",
+    "recipientName": "b",
+    "letterContent": "hi",
+    "delayDays": 3,
+    "imageUrl": "/uploads/1771559972165-clash-royale.jpg",
+    "scheduleTime": "2026-02-20T03:59:32.174Z",
+    "createdAt": "2026-02-20T03:59:32.176Z"
+  },
+  {
+    "id": "f0fa4b88-9ca0-4fd7-abac-db469b9200f3",
+    "senderName": "a",
+    "recipientName": "a",
+    "letterContent": "a",
+    "delayDays": 1,
+    "imageUrl": null,
+    "scheduleTime": "2026-02-20T04:10:52.649Z",
+    "createdAt": "2026-02-20T04:10:52.649Z"
+  },
+  {
+    "id": "1b7d6263-0a02-446b-b67a-016e62021828",
+    "senderName": "a",
+    "recipientName": "b",
+    "letterContent": "c",
+    "delayDays": 0,
+    "imageUrl": null,
+    "scheduleTime": "2026-02-20T04:17:53.060Z",
+    "createdAt": "2026-02-20T04:17:53.060Z"
+  },
+  {
+    "id": "c7625bfe-e8b0-45a5-bcc1-06614c27b69c",
+    "senderName": "a",
+    "recipientName": "a",
+    "letterContent": "a",
+    "delayDays": 0,
+    "imageUrl": null,
+    "scheduleTime": "2026-02-20T04:19:36.664Z",
+    "createdAt": "2026-02-20T04:19:36.664Z"
+  },
+  {
+    "id": "e24fdf41-04bc-4bb9-8d8a-84055f67a4f0",
+    "senderName": "t",
+    "recipientName": "r",
+    "letterContent": "test",
+    "delayMinutes": 5,
+    "delayDays": 0,
+    "imageUrls": [
+      "/uploads/1771563795072-1771559972165-clash-royale.jpg"
+    ],
+    "scheduleTime": "2026-02-20T05:03:15.083Z",
+    "createdAt": "2026-02-20T05:03:15.084Z"
+  },
+  {
+    "id": "d3ba3547-6584-47ae-a243-2fb2f1875d08",
+    "senderName": "z",
+    "recipientName": "z",
+    "letterContent": "z",
+    "delayMinutes": 5,
+    "delayDays": 0,
+    "imageUrls": [
+      "/uploads/1771563892427-letter-image-1.png"
+    ],
+    "scheduleTime": "2026-02-20T05:04:52.441Z",
+    "createdAt": "2026-02-20T05:04:52.442Z"
+  },
+  {
+    "id": "b1fee1fe-c002-4777-ae7f-7358dd969ed5",
+    "senderName": "a",
+    "recipientName": "a",
+    "letterContent": "a",
+    "delayMinutes": 0,
+    "delayDays": 0,
+    "imageUrls": [],
+    "audioUrl": "/uploads/1771564143616-Billie Eilish - bad guy (Lyrics).mp3",
+    "scheduleTime": "2026-02-20T05:09:03.660Z",
+    "createdAt": "2026-02-20T05:09:03.661Z"
+  }
+]

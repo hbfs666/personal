@@ -35,32 +35,15 @@ export default function PaperAirplaneAnimation({ progress }: Props) {
           opacity="0.6"
         />
 
-        {/* Start point - envelope */}
-        <g>
-          <rect x="16" y="92" width="24" height="18" fill="#e0e7ff" stroke="#6366f1" strokeWidth="1.5" rx="2" />
-          <path d="M 16 92 L 28 104 L 40 92" stroke="#6366f1" strokeWidth="1.5" fill="none" />
-        </g>
-
-        {/* Letter icon floating along the path */}
-        <motion.g
-          animate={{
-            x: pos.x - 15,
-            y: pos.y - 15
-          }}
-          transition={{ duration: 0.5 }}
+        {/* Start point - pushpin */}
+        <text
+          x="28"
+          y="106"
+          fontSize="22"
+          textAnchor="middle"
         >
-          {/* Floating animation - up and down */}
-          <motion.text
-            animate={{ y: [-5, 5, -5] }}
-            transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
-            x="15"
-            y="25"
-            fontSize="30"
-            textAnchor="middle"
-          >
-            ✉️
-          </motion.text>
-        </motion.g>
+          📍
+        </text>
 
         {/* End point - rotating earth with continents */}
         <motion.g
@@ -117,6 +100,27 @@ export default function PaperAirplaneAnimation({ progress }: Props) {
             strokeWidth="0.5"
             opacity="0.3"
           />
+        </motion.g>
+
+        {/* Letter icon floating along the path (rendered on top of destination) */}
+        <motion.g
+          animate={{
+            x: pos.x - 15,
+            y: pos.y - 15
+          }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* Floating animation - up and down */}
+          <motion.text
+            animate={{ y: [-5, 5, -5] }}
+            transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+            x="15"
+            y="25"
+            fontSize="30"
+            textAnchor="middle"
+          >
+            ✉️
+          </motion.text>
         </motion.g>
 
         {/* Progress percentage text */}

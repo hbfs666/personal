@@ -288,7 +288,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                 <p className="text-sm text-gray-600 mb-2">信件在此之前保持鎖定 🔒</p>
                 <p className="text-2xl font-bold text-indigo-900">{timeLeft}</p>
                 <p className="text-xs text-gray-500 mt-2">
-                  還需等待 {delayDisplayText} 才能看到完整內容
+                  請耐心等待~~~
                 </p>
               </div>
             )}

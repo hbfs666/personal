@@ -11,6 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "framer-motion": "^12.34.2",

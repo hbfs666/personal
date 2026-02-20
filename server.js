@@ -5,24 +5,49 @@ import { v4 as uuidv4 } from 'uuid'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { createClient } from '@supabase/supabase-js'
+import { v2 as cloudinary } from 'cloudinary'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const distDir = path.join(__dirname, 'dist')
+
+const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+const hasCloudinary = Boolean(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+)
+const useCloudPersistence = hasSupabase && hasCloudinary
+
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname
 const publicDir = path.join(__dirname, 'public')
 const uploadsDir = path.join(dataDir, 'uploads')
 const lettersFile = path.join(dataDir, 'letters.json')
 
+const supabase = hasSupabase
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null
+
+if (hasCloudinary) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+  })
+}
+
 app.use(cors())
 app.use(express.json())
 app.use(express.static(publicDir))
-app.use('/uploads', express.static(uploadsDir))
+if (!useCloudPersistence) {
+  app.use('/uploads', express.static(uploadsDir))
+}
 if (fs.existsSync(distDir)) {
   app.use(express.static(distDir))
 }
 
-// Ensure public directory exists
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true })
 }
@@ -31,54 +56,109 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true })
 }
 
-// Multer setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true })
-    }
-    cb(null, uploadsDir)
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`)
+if (!useCloudPersistence) {
+  if (!fs.existsSync(lettersFile)) {
+    fs.writeFileSync(lettersFile, JSON.stringify([]))
   }
-})
 
-const upload = multer({ 
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true })
+  }
+}
+
+const storage = useCloudPersistence
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => {
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true })
+        }
+        cb(null, uploadsDir)
+      },
+      filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`)
+      }
+    })
+
+const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 } // 25MB per file
+  limits: { fileSize: 25 * 1024 * 1024 }
 })
 
-// Initialize letters file
-if (!fs.existsSync(lettersFile)) {
-  fs.writeFileSync(lettersFile, JSON.stringify([]))
+const getDelayMinutes = (letter) => {
+  if (Number.isFinite(letter.delayMinutes)) {
+    return letter.delayMinutes
+  }
+  return (letter.delayDays || 0) * 24 * 60
 }
 
-// Ensure uploads directory exists
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true })
+const mapDbLetter = (row) => ({
+  id: row.id,
+  senderName: row.sender_name,
+  recipientName: row.recipient_name,
+  recipientEmail: row.recipient_email,
+  letterContent: row.letter_content,
+  delayMinutes: row.delay_minutes,
+  delayDays: Math.floor((row.delay_minutes || 0) / (24 * 60)),
+  imageUrls: row.image_urls || [],
+  audioUrl: row.audio_url || null,
+  scheduleTime: row.schedule_time,
+  createdAt: row.created_at
+})
+
+const uploadToCloudinary = async (file, folder, resourceType) => {
+  const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
+  const result = await cloudinary.uploader.upload(dataUri, {
+    folder,
+    resource_type: resourceType
+  })
+  return result.secure_url
 }
 
-// Get all letters
-app.get('/api/letters', (req, res) => {
+app.get('/api/letters', async (req, res) => {
+  if (useCloudPersistence) {
+    const { data, error } = await supabase
+      .from('letters')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      return res.status(500).json({ message: `資料庫錯誤: ${error.message}` })
+    }
+
+    return res.json(data.map(mapDbLetter))
+  }
+
   const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
   res.json(letters)
 })
 
-// Get letter by ID
-app.get('/api/letters/:id', (req, res) => {
-  const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
-  const letter = letters.find(l => l.id === req.params.id)
-  
-  if (!letter) {
-    return res.status(404).json({ error: 'Letter not found' })
+app.get('/api/letters/:id', async (req, res) => {
+  let letter
+
+  if (useCloudPersistence) {
+    const { data, error } = await supabase
+      .from('letters')
+      .select('*')
+      .eq('id', req.params.id)
+      .single()
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Letter not found' })
+    }
+
+    letter = mapDbLetter(data)
+  } else {
+    const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+    letter = letters.find(l => l.id === req.params.id)
+
+    if (!letter) {
+      return res.status(404).json({ error: 'Letter not found' })
+    }
   }
 
-  // Check if it's time to reveal
   const now = new Date().getTime()
-  const delayMinutes = Number.isFinite(letter.delayMinutes)
-    ? letter.delayMinutes
-    : ((letter.delayDays || 0) * 24 * 60)
+  const delayMinutes = getDelayMinutes(letter)
   const revealTime = new Date(letter.scheduleTime).getTime() + (delayMinutes * 60 * 1000)
   const isRevealed = now >= revealTime
 
@@ -90,31 +170,24 @@ app.get('/api/letters/:id', (req, res) => {
   })
 })
 
-// Create a new letter
 app.post('/api/letters', (req, res) => {
   const uploadFields = upload.fields([
     { name: 'images', maxCount: 10 },
     { name: 'audio', maxCount: 1 }
   ])
 
-  // Use upload middleware with error handling
-  uploadFields(req, res, (err) => {
+  uploadFields(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-      console.error('Multer error:', err)
       return res.status(400).json({ message: `上傳錯誤: ${err.message}` })
-    } else if (err) {
-      console.error('Upload error:', err)
+    }
+    if (err) {
       return res.status(400).json({ message: `檔案錯誤: ${err.message}` })
     }
 
     try {
-      console.log('Request body:', req.body)
-      console.log('Uploaded files:', req.files)
-
       const fileGroups = req.files || {}
       const imageFiles = fileGroups.images || []
       const audioFile = fileGroups.audio?.[0] || null
-      
       const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName } = req.body
 
       const parsedDelayMinutes = Number.parseInt(delayMinutes, 10)
@@ -123,13 +196,61 @@ app.post('/api/letters', (req, res) => {
         ? parsedDelayMinutes
         : (Number.isFinite(fallbackDelayMinutes) ? fallbackDelayMinutes : 0)
       const safeDelayMinutes = Math.max(0, Math.min(normalizedDelayMinutes, 30 * 24 * 60))
-      
-      console.log('Reading letters file from:', lettersFile)
-      const lettersContent = fs.readFileSync(lettersFile, 'utf8')
-      const letters = JSON.parse(lettersContent)
-      
+
+      if (!senderName || !letterContent) {
+        return res.status(400).json({ message: '缺少必填欄位' })
+      }
+
+      const id = uuidv4()
+      const scheduleTime = new Date().toISOString()
+      const createdAt = new Date().toISOString()
+
+      if (useCloudPersistence) {
+        const imageUrls = await Promise.all(
+          imageFiles.map(file => uploadToCloudinary(file, 'letters/images', 'image'))
+        )
+
+        let audioUrl = null
+        if (audioFile) {
+          audioUrl = await uploadToCloudinary(audioFile, 'letters/audio', 'video')
+        }
+
+        const insertPayload = {
+          id,
+          sender_name: senderName,
+          recipient_name: recipientName,
+          recipient_email: recipientEmail || null,
+          letter_content: letterContent,
+          delay_minutes: safeDelayMinutes,
+          image_urls: imageUrls,
+          audio_url: audioUrl,
+          schedule_time: scheduleTime,
+          created_at: createdAt
+        }
+
+        const { error } = await supabase.from('letters').insert(insertPayload)
+        if (error) {
+          return res.status(500).json({ message: `資料庫寫入失敗: ${error.message}` })
+        }
+
+        return res.json({
+          id,
+          senderName,
+          recipientName,
+          recipientEmail,
+          letterContent,
+          delayMinutes: safeDelayMinutes,
+          delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
+          imageUrls,
+          audioUrl,
+          scheduleTime,
+          createdAt
+        })
+      }
+
+      const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
       const newLetter = {
-        id: uuidv4(),
+        id,
         senderName,
         recipientName,
         recipientEmail,
@@ -138,18 +259,14 @@ app.post('/api/letters', (req, res) => {
         delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
         imageUrls: imageFiles.map(file => `/uploads/${file.filename}`),
         audioUrl: audioFile ? `/uploads/${audioFile.filename}` : null,
-        scheduleTime: new Date().toISOString(),
-        createdAt: new Date().toISOString()
+        scheduleTime,
+        createdAt
       }
-      
+
       letters.push(newLetter)
-      console.log('Writing to letters file...')
       fs.writeFileSync(lettersFile, JSON.stringify(letters, null, 2))
-      console.log('Successfully saved letter:', newLetter.id)
-      
       res.json(newLetter)
     } catch (error) {
-      console.error('Error in POST /api/letters:', error)
       res.status(500).json({ message: `伺服器錯誤: ${error.message}` })
     }
   })
@@ -164,4 +281,9 @@ if (fs.existsSync(distDir)) {
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
+  if (useCloudPersistence) {
+    console.log('Using Supabase + Cloudinary persistence')
+  } else {
+    console.log('Using local file persistence')
+  }
 })

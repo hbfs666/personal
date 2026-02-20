@@ -41,9 +41,7 @@ if (hasCloudinary) {
 app.use(cors())
 app.use(express.json())
 app.use(express.static(publicDir))
-if (!useCloudPersistence) {
-  app.use('/uploads', express.static(uploadsDir))
-}
+app.use('/uploads', express.static(uploadsDir))
 if (fs.existsSync(distDir)) {
   app.use(express.static(distDir))
 }
@@ -56,14 +54,12 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true })
 }
 
-if (!useCloudPersistence) {
-  if (!fs.existsSync(lettersFile)) {
-    fs.writeFileSync(lettersFile, JSON.stringify([]))
-  }
+if (!fs.existsSync(lettersFile)) {
+  fs.writeFileSync(lettersFile, JSON.stringify([]))
+}
 
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true })
-  }
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true })
 }
 
 const storage = useCloudPersistence
@@ -115,6 +111,57 @@ const uploadToCloudinary = async (file, folder, resourceType) => {
   return result.secure_url
 }
 
+const writeBufferFileToLocal = (file) => {
+  const ext = path.extname(file.originalname || '') || ''
+  const safeExt = ext.slice(0, 10)
+  const filename = `${Date.now()}-${uuidv4()}${safeExt}`
+  const fullPath = path.join(uploadsDir, filename)
+  fs.writeFileSync(fullPath, file.buffer)
+  return `/uploads/${filename}`
+}
+
+const persistLocalLetter = ({
+  id,
+  senderName,
+  recipientName,
+  recipientEmail,
+  letterContent,
+  safeDelayMinutes,
+  imageFiles,
+  audioFile,
+  scheduleTime,
+  createdAt,
+  filesAreInMemory
+}) => {
+  const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+
+  const imageUrls = filesAreInMemory
+    ? imageFiles.map(file => writeBufferFileToLocal(file))
+    : imageFiles.map(file => `/uploads/${file.filename}`)
+
+  const audioUrl = audioFile
+    ? (filesAreInMemory ? writeBufferFileToLocal(audioFile) : `/uploads/${audioFile.filename}`)
+    : null
+
+  const newLetter = {
+    id,
+    senderName,
+    recipientName,
+    recipientEmail,
+    letterContent,
+    delayMinutes: safeDelayMinutes,
+    delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
+    imageUrls,
+    audioUrl,
+    scheduleTime,
+    createdAt
+  }
+
+  letters.push(newLetter)
+  fs.writeFileSync(lettersFile, JSON.stringify(letters, null, 2))
+  return newLetter
+}
+
 app.get('/api/letters', async (req, res) => {
   if (useCloudPersistence) {
     const { data, error } = await supabase
@@ -122,11 +169,12 @@ app.get('/api/letters', async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false })
 
-    if (error) {
-      return res.status(500).json({ message: `資料庫錯誤: ${error.message}` })
+    if (!error && data) {
+      return res.json(data.map(mapDbLetter))
     }
 
-    return res.json(data.map(mapDbLetter))
+    const fallbackLetters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+    return res.json(fallbackLetters)
   }
 
   const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
@@ -143,18 +191,19 @@ app.get('/api/letters/:id', async (req, res) => {
       .eq('id', req.params.id)
       .single()
 
-    if (error || !data) {
-      return res.status(404).json({ error: 'Letter not found' })
+    if (!error && data) {
+      letter = mapDbLetter(data)
+    } else {
+      const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+      letter = letters.find(l => l.id === req.params.id)
     }
-
-    letter = mapDbLetter(data)
   } else {
     const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
     letter = letters.find(l => l.id === req.params.id)
+  }
 
-    if (!letter) {
-      return res.status(404).json({ error: 'Letter not found' })
-    }
+  if (!letter) {
+    return res.status(404).json({ error: 'Letter not found' })
   }
 
   const now = new Date().getTime()
@@ -167,6 +216,15 @@ app.get('/api/letters/:id', async (req, res) => {
     delayMinutes,
     isRevealed,
     timeLeft: Math.max(0, revealTime - now)
+  })
+})
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    mode: useCloudPersistence ? 'cloud' : 'local',
+    hasSupabase,
+    hasCloudinary
   })
 })
 
@@ -206,66 +264,80 @@ app.post('/api/letters', (req, res) => {
       const createdAt = new Date().toISOString()
 
       if (useCloudPersistence) {
-        const imageUrls = await Promise.all(
-          imageFiles.map(file => uploadToCloudinary(file, 'letters/images', 'image'))
-        )
+        try {
+          const imageUrls = await Promise.all(
+            imageFiles.map(file => uploadToCloudinary(file, 'letters/images', 'image'))
+          )
 
-        let audioUrl = null
-        if (audioFile) {
-          audioUrl = await uploadToCloudinary(audioFile, 'letters/audio', 'video')
+          let audioUrl = null
+          if (audioFile) {
+            audioUrl = await uploadToCloudinary(audioFile, 'letters/audio', 'video')
+          }
+
+          const insertPayload = {
+            id,
+            sender_name: senderName,
+            recipient_name: recipientName,
+            recipient_email: recipientEmail || null,
+            letter_content: letterContent,
+            delay_minutes: safeDelayMinutes,
+            image_urls: imageUrls,
+            audio_url: audioUrl,
+            schedule_time: scheduleTime,
+            created_at: createdAt
+          }
+
+          const { error } = await supabase.from('letters').insert(insertPayload)
+          if (error) {
+            throw new Error(`資料庫寫入失敗: ${error.message}`)
+          }
+
+          return res.json({
+            id,
+            senderName,
+            recipientName,
+            recipientEmail,
+            letterContent,
+            delayMinutes: safeDelayMinutes,
+            delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
+            imageUrls,
+            audioUrl,
+            scheduleTime,
+            createdAt
+          })
+        } catch (cloudError) {
+          console.error('Cloud persistence failed, fallback to local:', cloudError)
+          const localLetter = persistLocalLetter({
+            id,
+            senderName,
+            recipientName,
+            recipientEmail,
+            letterContent,
+            safeDelayMinutes,
+            imageFiles,
+            audioFile,
+            scheduleTime,
+            createdAt,
+            filesAreInMemory: true
+          })
+          return res.json(localLetter)
         }
-
-        const insertPayload = {
-          id,
-          sender_name: senderName,
-          recipient_name: recipientName,
-          recipient_email: recipientEmail || null,
-          letter_content: letterContent,
-          delay_minutes: safeDelayMinutes,
-          image_urls: imageUrls,
-          audio_url: audioUrl,
-          schedule_time: scheduleTime,
-          created_at: createdAt
-        }
-
-        const { error } = await supabase.from('letters').insert(insertPayload)
-        if (error) {
-          return res.status(500).json({ message: `資料庫寫入失敗: ${error.message}` })
-        }
-
-        return res.json({
-          id,
-          senderName,
-          recipientName,
-          recipientEmail,
-          letterContent,
-          delayMinutes: safeDelayMinutes,
-          delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
-          imageUrls,
-          audioUrl,
-          scheduleTime,
-          createdAt
-        })
       }
 
-      const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
-      const newLetter = {
+      const localLetter = persistLocalLetter({
         id,
         senderName,
         recipientName,
         recipientEmail,
         letterContent,
-        delayMinutes: safeDelayMinutes,
-        delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
-        imageUrls: imageFiles.map(file => `/uploads/${file.filename}`),
-        audioUrl: audioFile ? `/uploads/${audioFile.filename}` : null,
+        safeDelayMinutes,
+        imageFiles,
+        audioFile,
         scheduleTime,
-        createdAt
-      }
-
-      letters.push(newLetter)
-      fs.writeFileSync(lettersFile, JSON.stringify(letters, null, 2))
-      res.json(newLetter)
+        createdAt,
+        filesAreInMemory: false
+      })
+      res.json(localLetter)
     } catch (error) {
       res.status(500).json({ message: `伺服器錯誤: ${error.message}` })
     }

@@ -253,7 +253,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
               <h1 className="text-4xl font-bold mb-2">{letter.senderName}</h1>
               <p className="text-blue-100">寄給 {letter.recipientName}</p>
             </div>
-            {letter.stampData && (
+            {letter.isRevealed && letter.stampData && (
               <div className="rounded-lg border-2 border-amber-300 bg-white p-1 shadow-md shrink-0">
                 <img
                   src={letter.stampData}
@@ -387,19 +387,24 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
             )}
 
             {/* Letter Content */}
-            <motion.div
-              initial={{ opacity: 0.3, filter: 'blur(10px)' }}
-              animate={{
-                opacity: letter.isRevealed ? 1 : 0.3,
-                filter: letter.isRevealed ? 'blur(0px)' : 'blur(10px)'
-              }}
-              transition={{ duration: 0.5 }}
-              className="bg-yellow-50 p-6 rounded-lg border-2 border-yellow-200"
-            >
-              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed text-sm">
-                {letter.letterContent}
-              </p>
-            </motion.div>
+            {letter.isRevealed ? (
+              <motion.div
+                initial={{ opacity: 0.3, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, filter: 'blur(0px)' }}
+                transition={{ duration: 0.5 }}
+                className="bg-yellow-50 p-6 rounded-lg border-2 border-yellow-200"
+              >
+                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed text-sm">
+                  {letter.letterContent}
+                </p>
+              </motion.div>
+            ) : (
+              <div className="bg-yellow-50 p-6 rounded-lg border-2 border-yellow-200 text-center">
+                <div className="text-4xl mb-2">🔒</div>
+                <p className="font-semibold text-yellow-900">信件正文尚未解鎖</p>
+                <p className="text-xs text-gray-600 mt-1">到達解鎖時間後即可查看完整內容</p>
+              </div>
+            )}
           </div>
 
           {/* Footer */}

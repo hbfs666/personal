@@ -107,6 +107,7 @@ const mapDbLetter = (row) => ({
   delayDays: Math.floor((row.delay_minutes || 0) / (24 * 60)),
   imageUrls: row.image_urls || [],
   audioUrl: row.audio_url || null,
+  stampData: row.stamp_data || null,
   scheduleTime: row.schedule_time,
   createdAt: row.created_at
 })
@@ -138,6 +139,7 @@ const persistLocalLetter = ({
   safeDelayMinutes,
   imageFiles,
   audioFile,
+  stampData,
   scheduleTime,
   createdAt,
   filesAreInMemory
@@ -162,6 +164,7 @@ const persistLocalLetter = ({
     delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
     imageUrls,
     audioUrl,
+    stampData: stampData || null,
     scheduleTime,
     createdAt
   }
@@ -291,7 +294,7 @@ app.post('/api/letters', (req, res) => {
       const fileGroups = req.files || {}
       const imageFiles = fileGroups.images || []
       const audioFile = fileGroups.audio?.[0] || null
-      const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName } = req.body
+      const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName, stampData } = req.body
 
       const parsedDelayMinutes = Number.parseInt(delayMinutes, 10)
       const fallbackDelayMinutes = Number.parseInt(delayDays, 10) * 24 * 60
@@ -328,6 +331,7 @@ app.post('/api/letters', (req, res) => {
             delay_minutes: safeDelayMinutes,
             image_urls: imageUrls,
             audio_url: audioUrl,
+            stamp_data: stampData || null,
             schedule_time: scheduleTime,
             created_at: createdAt
           }
@@ -347,6 +351,7 @@ app.post('/api/letters', (req, res) => {
             delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
             imageUrls,
             audioUrl,
+            stampData: stampData || null,
             scheduleTime,
             createdAt
           })
@@ -361,6 +366,7 @@ app.post('/api/letters', (req, res) => {
             safeDelayMinutes,
             imageFiles,
             audioFile,
+            stampData,
             scheduleTime,
             createdAt,
             filesAreInMemory: true
@@ -378,6 +384,7 @@ app.post('/api/letters', (req, res) => {
         safeDelayMinutes,
         imageFiles,
         audioFile,
+        stampData,
         scheduleTime,
         createdAt,
         filesAreInMemory: false

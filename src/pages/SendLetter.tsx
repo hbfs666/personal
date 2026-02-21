@@ -24,8 +24,13 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
+  const stampCanvasRef = useRef<HTMLCanvasElement>(null)
+  const isDrawingRef = useRef(false)
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null)
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
+  const [stampDataUrl, setStampDataUrl] = useState<string | null>(null)
+  const [showStampEditor, setShowStampEditor] = useState(false)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -89,6 +94,123 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     }
   }
 
+  const initializeStampCanvas = (withExistingStamp = true) => {
+    const canvas = stampCanvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+
+    ctx.fillStyle = '#fff7ed'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.strokeStyle = '#f59e0b'
+    ctx.lineWidth = 3
+    ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3)
+
+    if (withExistingStamp && stampDataUrl) {
+      const image = new Image()
+      image.onload = () => {
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+      }
+      image.src = stampDataUrl
+    }
+  }
+
+  const getStampPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = stampCanvasRef.current
+    if (!canvas) {
+      return { x: 0, y: 0 }
+    }
+
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    }
+  }
+
+  const handleStampPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = stampCanvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+
+    canvas.setPointerCapture(e.pointerId)
+    isDrawingRef.current = true
+    const startPoint = getStampPointerPosition(e)
+    lastPointRef.current = startPoint
+
+    ctx.beginPath()
+    ctx.fillStyle = '#1e3a8a'
+    ctx.arc(startPoint.x, startPoint.y, 2.5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const handleStampPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) {
+      return
+    }
+
+    const canvas = stampCanvasRef.current
+    if (!canvas || !lastPointRef.current) {
+      return
+    }
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+
+    const currentPoint = getStampPointerPosition(e)
+    ctx.strokeStyle = '#1e3a8a'
+    ctx.lineWidth = 4
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y)
+    ctx.lineTo(currentPoint.x, currentPoint.y)
+    ctx.stroke()
+    lastPointRef.current = currentPoint
+  }
+
+  const handleStampPointerEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = stampCanvasRef.current
+    if (canvas && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId)
+    }
+    isDrawingRef.current = false
+    lastPointRef.current = null
+  }
+
+  const openStampEditor = () => {
+    setShowStampEditor(true)
+    requestAnimationFrame(() => initializeStampCanvas(true))
+  }
+
+  const clearStampCanvas = () => {
+    initializeStampCanvas(false)
+  }
+
+  const saveStampDrawing = () => {
+    const canvas = stampCanvasRef.current
+    if (!canvas) {
+      return
+    }
+    setStampDataUrl(canvas.toDataURL('image/png'))
+    setShowStampEditor(false)
+  }
+
   const handleCopyLink = async () => {
     if (shareLink) {
       await navigator.clipboard.writeText(shareLink)
@@ -148,6 +270,10 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
 
       if (audioFile) {
         formDataToSend.append('audio', audioFile)
+      }
+
+      if (stampDataUrl) {
+        formDataToSend.append('stampData', stampDataUrl)
       }
 
       const response = await fetch(apiUrl('/api/letters'), {
@@ -257,6 +383,8 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
             setDelayValue(5)
             setImagePreviews([])
             setAudioFile(null)
+            setStampDataUrl(null)
+            setShowStampEditor(false)
             if (fileInputRef.current) fileInputRef.current.value = ''
             if (audioInputRef.current) audioInputRef.current.value = ''
           }}
@@ -400,6 +528,82 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
           )}
           <p className="text-xs text-gray-600 mt-2">解鎖後筆友可直接播放這段音頻</p>
         </div>
+
+        <div className="bg-amber-50 p-4 rounded-lg border-2 border-amber-200">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            🎟️ 自製郵票（可選）
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={openStampEditor}
+              className="px-4 py-2 rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600 transition"
+            >
+              {stampDataUrl ? '重新繪製郵票' : '開始繪製郵票'}
+            </button>
+            {stampDataUrl && (
+              <button
+                type="button"
+                onClick={() => setStampDataUrl(null)}
+                className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition"
+              >
+                移除郵票
+              </button>
+            )}
+          </div>
+
+          {stampDataUrl && (
+            <div className="mt-3">
+              <p className="text-xs text-gray-600 mb-2">郵票預覽</p>
+              <img
+                src={stampDataUrl}
+                alt="自製郵票預覽"
+                className="w-24 h-24 object-cover rounded-md border-2 border-amber-300 bg-white"
+              />
+            </div>
+          )}
+
+          <p className="text-xs text-gray-600 mt-3">筆友收到信後，郵票會顯示在信件右上角</p>
+        </div>
+
+        {showStampEditor && (
+          <div className="bg-white border-2 border-amber-300 rounded-lg p-4 space-y-3">
+            <p className="font-semibold text-amber-900">在小郵票內自由塗鴉</p>
+            <canvas
+              ref={stampCanvasRef}
+              width={160}
+              height={160}
+              onPointerDown={handleStampPointerDown}
+              onPointerMove={handleStampPointerMove}
+              onPointerUp={handleStampPointerEnd}
+              onPointerLeave={handleStampPointerEnd}
+              className="w-40 h-40 rounded-md border-2 border-amber-400 bg-amber-100 touch-none"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={clearStampCanvas}
+                className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-semibold transition"
+              >
+                清空重畫
+              </button>
+              <button
+                type="button"
+                onClick={saveStampDrawing}
+                className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition"
+              >
+                保存郵票
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowStampEditor(false)}
+                className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-sm font-semibold transition"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
           <label className="block text-sm font-semibold text-gray-700 mb-2">

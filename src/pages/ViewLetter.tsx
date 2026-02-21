@@ -244,23 +244,24 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="bg-white rounded-2xl shadow-2xl overflow-hidden relative"
+          className="bg-white rounded-2xl shadow-2xl overflow-hidden"
         >
-          {letter.stampData && (
-            <div className="absolute top-4 right-4 z-20 rounded-md border-2 border-amber-300 bg-white p-1 shadow-md">
-              <img
-                src={letter.stampData}
-                alt="自製郵票"
-                className="w-16 h-16 object-cover rounded-sm"
-              />
-            </div>
-          )}
-
           {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-8 text-white">
-            <p className="text-sm opacity-90">來自</p>
-            <h1 className="text-4xl font-bold mb-2">{letter.senderName}</h1>
-            <p className="text-blue-100">寄給 {letter.recipientName}</p>
+          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-8 text-white flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm opacity-90">來自</p>
+              <h1 className="text-4xl font-bold mb-2">{letter.senderName}</h1>
+              <p className="text-blue-100">寄給 {letter.recipientName}</p>
+            </div>
+            {letter.stampData && (
+              <div className="rounded-lg border-2 border-amber-300 bg-white p-1 shadow-md shrink-0">
+                <img
+                  src={letter.stampData}
+                  alt="自製郵票"
+                  className="w-24 h-24 object-cover rounded-sm"
+                />
+              </div>
+            )}
           </div>
 
           {/* Paper Airplane Animation */}

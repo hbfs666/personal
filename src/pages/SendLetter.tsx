@@ -241,7 +241,10 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload))
   }, [formData, delayUnit, delayValue, stampDataUrl, stampTemplate, paperTheme, shareLink])
 
-  const initializeStampCanvas = (withExistingStamp = true) => {
+  const initializeStampCanvas = (
+    withExistingStamp = true,
+    template: 'classic' | 'star' | 'heart' | 'wave' = stampTemplate
+  ) => {
     const canvas = stampCanvasRef.current
     if (!canvas) {
       return
@@ -257,7 +260,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     ctx.strokeStyle = STAMP_BORDER_COLOR
     ctx.lineWidth = 3
     ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3)
-    drawStampTemplate(ctx, stampTemplate, canvas.width, canvas.height)
+    drawStampTemplate(ctx, template, canvas.width, canvas.height)
 
     if (withExistingStamp && stampDataUrl) {
       const image = new Image()
@@ -349,7 +352,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
 
   const handleChangeTemplate = (template: 'classic' | 'star' | 'heart' | 'wave') => {
     setStampTemplate(template)
-    requestAnimationFrame(() => initializeStampCanvas(false))
+    requestAnimationFrame(() => initializeStampCanvas(false, template))
   }
 
   const handleSelectBrushColor = (color: string) => {

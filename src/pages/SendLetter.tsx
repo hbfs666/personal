@@ -3,6 +3,9 @@ import { motion } from 'framer-motion'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
+const STAMP_BG_COLOR = '#fff7ed'
+const STAMP_BORDER_COLOR = '#f59e0b'
+const STAMP_COLOR_OPTIONS = ['#1e3a8a', '#be123c', '#047857', '#7c3aed', '#0f172a']
 
 interface SendLetterProps {
   onLetterSent: (id: string) => void
@@ -31,6 +34,9 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [shared, setShared] = useState(false)
   const [stampDataUrl, setStampDataUrl] = useState<string | null>(null)
   const [showStampEditor, setShowStampEditor] = useState(false)
+  const [brushColor, setBrushColor] = useState('#1e3a8a')
+  const [brushSize, setBrushSize] = useState(6)
+  const [isEraserMode, setIsEraserMode] = useState(false)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -105,9 +111,9 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
       return
     }
 
-    ctx.fillStyle = '#fff7ed'
+    ctx.fillStyle = STAMP_BG_COLOR
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.strokeStyle = '#f59e0b'
+    ctx.strokeStyle = STAMP_BORDER_COLOR
     ctx.lineWidth = 3
     ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3)
 
@@ -150,10 +156,11 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     isDrawingRef.current = true
     const startPoint = getStampPointerPosition(e)
     lastPointRef.current = startPoint
+    const activeColor = isEraserMode ? STAMP_BG_COLOR : brushColor
 
     ctx.beginPath()
-    ctx.fillStyle = '#1e3a8a'
-    ctx.arc(startPoint.x, startPoint.y, 2.5, 0, Math.PI * 2)
+    ctx.fillStyle = activeColor
+    ctx.arc(startPoint.x, startPoint.y, Math.max(brushSize / 2, 2), 0, Math.PI * 2)
     ctx.fill()
   }
 
@@ -173,8 +180,8 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     }
 
     const currentPoint = getStampPointerPosition(e)
-    ctx.strokeStyle = '#1e3a8a'
-    ctx.lineWidth = 4
+    ctx.strokeStyle = isEraserMode ? STAMP_BG_COLOR : brushColor
+    ctx.lineWidth = brushSize
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
@@ -196,6 +203,11 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const openStampEditor = () => {
     setShowStampEditor(true)
     requestAnimationFrame(() => initializeStampCanvas(true))
+  }
+
+  const handleSelectBrushColor = (color: string) => {
+    setBrushColor(color)
+    setIsEraserMode(false)
   }
 
   const clearStampCanvas = () => {
@@ -569,15 +581,52 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
         {showStampEditor && (
           <div className="bg-white border-2 border-amber-300 rounded-lg p-4 space-y-3">
             <p className="font-semibold text-amber-900">在小郵票內自由塗鴉</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {STAMP_COLOR_OPTIONS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => handleSelectBrushColor(color)}
+                  className={`w-7 h-7 rounded-full border-2 transition ${
+                    !isEraserMode && brushColor === color ? 'border-gray-900 scale-110' : 'border-white'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  aria-label={`選擇顏色 ${color}`}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setIsEraserMode((prev) => !prev)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
+                  isEraserMode
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                }`}
+              >
+                {isEraserMode ? '🧽 橡皮擦中' : '🧽 橡皮擦'}
+              </button>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">畫筆粗細：{brushSize}px</label>
+              <input
+                type="range"
+                min={2}
+                max={18}
+                value={brushSize}
+                onChange={(e) => setBrushSize(Number.parseInt(e.target.value, 10))}
+                className="w-56 accent-amber-500"
+              />
+            </div>
             <canvas
               ref={stampCanvasRef}
-              width={160}
-              height={160}
+              width={240}
+              height={240}
               onPointerDown={handleStampPointerDown}
               onPointerMove={handleStampPointerMove}
               onPointerUp={handleStampPointerEnd}
               onPointerLeave={handleStampPointerEnd}
-              className="w-40 h-40 rounded-md border-2 border-amber-400 bg-amber-100 touch-none"
+              className="w-60 h-60 rounded-md border-2 border-amber-400 bg-amber-100 touch-none"
+              style={{ cursor: isEraserMode ? 'cell' : 'crosshair' }}
             />
             <div className="flex flex-wrap gap-2">
               <button

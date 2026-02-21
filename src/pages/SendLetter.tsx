@@ -5,7 +5,12 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 const STAMP_BG_COLOR = '#fff7ed'
 const STAMP_BORDER_COLOR = '#f59e0b'
-const STAMP_COLOR_OPTIONS = ['#1e3a8a', '#be123c', '#047857', '#7c3aed', '#0f172a']
+const STAMP_COLOR_OPTIONS = [
+  '#0f172a', '#1e3a8a', '#1d4ed8', '#0ea5e9', '#06b6d4',
+  '#065f46', '#16a34a', '#65a30d', '#eab308', '#f59e0b',
+  '#ea580c', '#dc2626', '#be123c', '#db2777', '#7c3aed',
+  '#6d28d9', '#4b5563', '#111827', '#ffffff'
+]
 
 interface SendLetterProps {
   onLetterSent: (id: string) => void
@@ -594,6 +599,16 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
                   aria-label={`選擇顏色 ${color}`}
                 />
               ))}
+              <label className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 text-xs text-gray-700">
+                自定義
+                <input
+                  type="color"
+                  value={brushColor}
+                  onChange={(e) => handleSelectBrushColor(e.target.value)}
+                  className="w-7 h-7 border-0 p-0 bg-transparent cursor-pointer"
+                  aria-label="自定義畫筆顏色"
+                />
+              </label>
               <button
                 type="button"
                 onClick={() => setIsEraserMode((prev) => !prev)}

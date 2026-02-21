@@ -29,6 +29,12 @@ interface SendLetterProps {
   onLetterSent: (id: string) => void
 }
 
+interface MediaPreviewItem {
+  url: string
+  type: 'image' | 'video'
+  name: string
+}
+
 export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [formData, setFormData] = useState({
     senderName: '',
@@ -38,7 +44,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [delayUnit, setDelayUnit] = useState<'immediate' | 'day' | 'hour' | 'minute'>('day')
   const [delayValue, setDelayValue] = useState(5)
 
-  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [mediaPreviews, setMediaPreviews] = useState<MediaPreviewItem[]>([])
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [shareLink, setShareLink] = useState<string | null>(null)
@@ -86,17 +92,25 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     const files = e.target.files
     if (files) {
       Array.from(files).forEach(file => {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          setImagePreviews(prev => [...prev, event.target?.result as string])
-        }
-        reader.readAsDataURL(file)
+        const previewUrl = URL.createObjectURL(file)
+        const mediaType: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image'
+        setMediaPreviews(prev => [...prev, {
+          url: previewUrl,
+          type: mediaType,
+          name: file.name
+        }])
       })
     }
   }
 
   const removeImage = (index: number) => {
-    setImagePreviews(prev => prev.filter((_, i) => i !== index))
+    setMediaPreviews(prev => {
+      const target = prev[index]
+      if (target) {
+        URL.revokeObjectURL(target.url)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
     if (fileInputRef.current) {
       const dt = new DataTransfer()
       Array.from(fileInputRef.current.files || []).forEach((file, i) => {
@@ -382,7 +396,8 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     setDelayUnit('day')
     setDelayValue(5)
     setPaperTheme('classic')
-    setImagePreviews([])
+    mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
+    setMediaPreviews([])
     setAudioFile(null)
     setStampDataUrl(null)
     setStampTemplate('classic')
@@ -659,30 +674,40 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
 
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">
-            📷 上傳信紙照片（可上傳多張）
+            🖼️ 上傳信紙圖片/影片（可上傳多個）
           </label>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             onChange={handleImageChange}
             className="w-full px-4 py-2 border-2 border-dashed border-indigo-300 rounded-lg cursor-pointer"
           />
-          {imagePreviews.length > 0 && (
+          {mediaPreviews.length > 0 && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
-              {imagePreviews.map((preview, index) => (
+              {mediaPreviews.map((preview, index) => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="relative group"
                 >
-                  <img
-                    src={preview}
-                    alt={`Preview ${index + 1}`}
-                    className="w-full h-32 object-cover rounded-lg"
-                  />
+                  {preview.type === 'image' ? (
+                    <img
+                      src={preview.url}
+                      alt={`Preview ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg"
+                    />
+                  ) : (
+                    <video
+                      src={preview.url}
+                      className="w-full h-32 object-cover rounded-lg bg-black"
+                      muted
+                      controls
+                    />
+                  )}
+                  <p className="text-[10px] text-gray-600 mt-1 truncate" title={preview.name}>{preview.name}</p>
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
@@ -697,7 +722,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
             </div>
           )}
           <p className="text-xs text-gray-600 mt-2">
-            {imagePreviews.length > 0 && `已上傳 ${imagePreviews.length} 張圖片`}
+            {mediaPreviews.length > 0 && `已上傳 ${mediaPreviews.length} 個媒體檔案`}
           </p>
         </div>
 

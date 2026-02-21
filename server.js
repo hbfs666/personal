@@ -90,6 +90,46 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }
 })
 
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.length > 0) {
+    return forwarded.split(',')[0].trim()
+  }
+
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0].trim()
+  }
+
+  return req.socket?.remoteAddress || ''
+}
+
+const detectCountryFromIp = async (ip) => {
+  if (!ip) {
+    return null
+  }
+
+  const normalizedIp = ip.replace(/^::ffff:/, '')
+  if (normalizedIp === '127.0.0.1' || normalizedIp === '::1') {
+    return 'Local'
+  }
+
+  try {
+    const response = await fetch(`https://ipwho.is/${encodeURIComponent(normalizedIp)}`)
+    if (!response.ok) {
+      return null
+    }
+
+    const data = await response.json()
+    if (data?.success && data?.country) {
+      return data.country
+    }
+  } catch (error) {
+    console.error('Country detection failed:', error.message)
+  }
+
+  return null
+}
+
 const getDelayMinutes = (letter) => {
   if (Number.isFinite(letter.delayMinutes)) {
     return letter.delayMinutes
@@ -101,11 +141,13 @@ const mapDbLetter = (row) => ({
   id: row.id,
   senderName: row.sender_name,
   recipientName: row.recipient_name,
+  senderCountry: row.sender_country || null,
   recipientEmail: row.recipient_email,
   letterContent: row.letter_content,
   delayMinutes: row.delay_minutes,
   delayDays: Math.floor((row.delay_minutes || 0) / (24 * 60)),
   imageUrls: row.image_urls || [],
+  videoUrls: row.video_urls || [],
   audioUrl: row.audio_url || null,
   stampData: row.stamp_data || null,
   paperTheme: row.paper_theme || 'classic',
@@ -135,10 +177,12 @@ const persistLocalLetter = ({
   id,
   senderName,
   recipientName,
+  senderCountry,
   recipientEmail,
   letterContent,
   safeDelayMinutes,
   imageFiles,
+  videoFiles,
   audioFile,
   stampData,
   paperTheme,
@@ -152,6 +196,10 @@ const persistLocalLetter = ({
     ? imageFiles.map(file => writeBufferFileToLocal(file))
     : imageFiles.map(file => `/uploads/${file.filename}`)
 
+  const videoUrls = filesAreInMemory
+    ? videoFiles.map(file => writeBufferFileToLocal(file))
+    : videoFiles.map(file => `/uploads/${file.filename}`)
+
   const audioUrl = audioFile
     ? (filesAreInMemory ? writeBufferFileToLocal(audioFile) : `/uploads/${audioFile.filename}`)
     : null
@@ -160,11 +208,13 @@ const persistLocalLetter = ({
     id,
     senderName,
     recipientName,
+    senderCountry: senderCountry || null,
     recipientEmail,
     letterContent,
     delayMinutes: safeDelayMinutes,
     delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
     imageUrls,
+    videoUrls,
     audioUrl,
     stampData: stampData || null,
     paperTheme: paperTheme || 'classic',
@@ -295,7 +345,9 @@ app.post('/api/letters', (req, res) => {
 
     try {
       const fileGroups = req.files || {}
-      const imageFiles = fileGroups.images || []
+      const mediaFiles = fileGroups.images || []
+      const imageFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('image/'))
+      const videoFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('video/'))
       const audioFile = fileGroups.audio?.[0] || null
       const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName, stampData, paperTheme } = req.body
 
@@ -313,11 +365,16 @@ app.post('/api/letters', (req, res) => {
       const id = uuidv4()
       const scheduleTime = new Date().toISOString()
       const createdAt = new Date().toISOString()
+      const senderCountry = await detectCountryFromIp(getClientIp(req))
 
       if (useCloudPersistence) {
         try {
           const imageUrls = await Promise.all(
             imageFiles.map(file => uploadToCloudinary(file, 'letters/images', 'image'))
+          )
+
+          const videoUrls = await Promise.all(
+            videoFiles.map(file => uploadToCloudinary(file, 'letters/videos', 'video'))
           )
 
           let audioUrl = null
@@ -328,11 +385,13 @@ app.post('/api/letters', (req, res) => {
           const insertPayload = {
             id,
             sender_name: senderName,
+            sender_country: senderCountry,
             recipient_name: recipientName,
             recipient_email: recipientEmail || null,
             letter_content: letterContent,
             delay_minutes: safeDelayMinutes,
             image_urls: imageUrls,
+            video_urls: videoUrls,
             audio_url: audioUrl,
             stamp_data: stampData || null,
             paper_theme: paperTheme || 'classic',
@@ -349,11 +408,13 @@ app.post('/api/letters', (req, res) => {
             id,
             senderName,
             recipientName,
+            senderCountry,
             recipientEmail,
             letterContent,
             delayMinutes: safeDelayMinutes,
             delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
             imageUrls,
+            videoUrls,
             audioUrl,
             stampData: stampData || null,
             paperTheme: paperTheme || 'classic',
@@ -366,10 +427,12 @@ app.post('/api/letters', (req, res) => {
             id,
             senderName,
             recipientName,
+            senderCountry,
             recipientEmail,
             letterContent,
             safeDelayMinutes,
             imageFiles,
+            videoFiles,
             audioFile,
             stampData,
             paperTheme,
@@ -385,10 +448,12 @@ app.post('/api/letters', (req, res) => {
         id,
         senderName,
         recipientName,
+        senderCountry,
         recipientEmail,
         letterContent,
         safeDelayMinutes,
         imageFiles,
+        videoFiles,
         audioFile,
         stampData,
         paperTheme,

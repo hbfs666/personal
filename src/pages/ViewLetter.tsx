@@ -12,9 +12,11 @@ const mediaUrl = (path: string) => {
 interface Letter {
   id: string
   senderName: string
+  senderCountry?: string | null
   recipientName: string
   letterContent: string
   imageUrls?: string[]
+  videoUrls?: string[]
   audioUrl?: string | null
   stampData?: string | null
   paperTheme?: 'classic' | 'warm' | 'mint' | 'lavender'
@@ -105,6 +107,28 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
       window.URL.revokeObjectURL(objectUrl)
     } catch (downloadError) {
       console.error('Audio download failed:', downloadError)
+    }
+  }
+
+  const handleDownloadVideo = async (videoUrl: string, index: number) => {
+    try {
+      const response = await fetch(mediaUrl(videoUrl))
+      if (!response.ok) {
+        throw new Error('下載失敗')
+      }
+
+      const blob = await response.blob()
+      const ext = blob.type.split('/')[1] || 'mp4'
+      const objectUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `letter-video-${index + 1}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(objectUrl)
+    } catch (downloadError) {
+      console.error('Video download failed:', downloadError)
     }
   }
 
@@ -262,6 +286,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
               <p className="text-sm opacity-90">來自</p>
               <h1 className="text-4xl font-bold mb-2">{letter.senderName}</h1>
               <p className="text-blue-100">寄給 {letter.recipientName}</p>
+              <p className="text-blue-100 text-sm mt-1">🌍 發信地：{letter.senderCountry || '未知'}</p>
             </div>
             {letter.isRevealed && letter.stampData && (
               <div className="rounded-lg border-2 border-amber-300 bg-white p-1 shadow-md shrink-0">
@@ -389,6 +414,53 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                         <div className="text-4xl mb-2">🔒</div>
                         <p className="font-semibold">圖片尚未解鎖</p>
                         <p className="text-xs text-gray-600 mt-1">解鎖後才能查看與下載</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </motion.div>
+            )}
+
+            {/* Videos Gallery */}
+            {letter.videoUrls && letter.videoUrls.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0.3 }}
+                animate={{ opacity: letter.isRevealed ? 1 : 0.3 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-4"
+              >
+                {letter.videoUrls.map((videoUrl, index) => (
+                  <div key={index} className="overflow-hidden rounded-lg border border-purple-100 bg-white">
+                    {letter.isRevealed ? (
+                      <>
+                        <video
+                          controls
+                          src={mediaUrl(videoUrl)}
+                          className="w-full max-h-96 bg-black"
+                        />
+                        <div className="flex gap-2 p-3 border-t border-purple-100 bg-purple-50">
+                          <a
+                            href={mediaUrl(videoUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition"
+                          >
+                            🎬 開啟影片
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadVideo(videoUrl, index)}
+                            className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+                          >
+                            ⬇️ 下載影片
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="h-56 flex flex-col items-center justify-center bg-purple-50 text-purple-900">
+                        <div className="text-4xl mb-2">🔒</div>
+                        <p className="font-semibold">影片尚未解鎖</p>
+                        <p className="text-xs text-gray-600 mt-1">解鎖後才能播放與下載</p>
                       </div>
                     )}
                   </div>

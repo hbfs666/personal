@@ -11,6 +11,41 @@ import { v2 as cloudinary } from 'cloudinary'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const distDir = path.join(__dirname, 'dist')
+app.set('trust proxy', true)
+
+const COUNTRY_CODE_TO_NAME = {
+  CN: 'China',
+  US: 'United States',
+  CA: 'Canada',
+  JP: 'Japan',
+  KR: 'South Korea',
+  TW: 'Taiwan',
+  HK: 'Hong Kong',
+  MO: 'Macao',
+  SG: 'Singapore',
+  MY: 'Malaysia',
+  TH: 'Thailand',
+  VN: 'Vietnam',
+  PH: 'Philippines',
+  ID: 'Indonesia',
+  IN: 'India',
+  AU: 'Australia',
+  NZ: 'New Zealand',
+  GB: 'United Kingdom',
+  FR: 'France',
+  DE: 'Germany',
+  ES: 'Spain',
+  IT: 'Italy',
+  NL: 'Netherlands',
+  RU: 'Russia',
+  BR: 'Brazil',
+  MX: 'Mexico',
+  AR: 'Argentina',
+  ZA: 'South Africa',
+  TR: 'Turkey',
+  SA: 'Saudi Arabia',
+  AE: 'United Arab Emirates'
+}
 
 const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
 const hasCloudinary = Boolean(
@@ -90,7 +125,36 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }
 })
 
+const getCountryFromHeaders = (req) => {
+  const headerCandidates = [
+    req.headers['cf-ipcountry'],
+    req.headers['x-vercel-ip-country'],
+    req.headers['x-country-code'],
+    req.headers['fly-country'],
+    req.headers['x-appengine-country']
+  ]
+
+  const countryCode = headerCandidates
+    .map(value => (Array.isArray(value) ? value[0] : value))
+    .find(value => typeof value === 'string' && value.trim().length > 0)
+
+  if (!countryCode) {
+    return null
+  }
+
+  const normalized = countryCode.trim().toUpperCase()
+  if (normalized === 'XX' || normalized === 'T1') {
+    return null
+  }
+
+  return COUNTRY_CODE_TO_NAME[normalized] || normalized
+}
+
 const getClientIp = (req) => {
+  if (typeof req.ip === 'string' && req.ip.length > 0) {
+    return req.ip
+  }
+
   const forwarded = req.headers['x-forwarded-for']
   if (typeof forwarded === 'string' && forwarded.length > 0) {
     return forwarded.split(',')[0].trim()
@@ -128,6 +192,15 @@ const detectCountryFromIp = async (ip) => {
   }
 
   return null
+}
+
+const detectSenderCountry = async (req) => {
+  const fromHeaders = getCountryFromHeaders(req)
+  if (fromHeaders) {
+    return fromHeaders
+  }
+
+  return detectCountryFromIp(getClientIp(req))
 }
 
 const getDelayMinutes = (letter) => {
@@ -357,15 +430,18 @@ app.post('/api/letters', (req, res) => {
         ? parsedDelayMinutes
         : (Number.isFinite(fallbackDelayMinutes) ? fallbackDelayMinutes : 0)
       const safeDelayMinutes = Math.max(0, Math.min(normalizedDelayMinutes, 30 * 24 * 60))
+      const safeLetterContent = typeof letterContent === 'string' ? letterContent : ''
+      const safeSenderName = typeof senderName === 'string' ? senderName.trim() : ''
+      const safeRecipientName = typeof recipientName === 'string' ? recipientName.trim() : ''
 
-      if (!senderName || !letterContent) {
+      if (!safeSenderName || !safeRecipientName) {
         return res.status(400).json({ message: '缺少必填欄位' })
       }
 
       const id = uuidv4()
       const scheduleTime = new Date().toISOString()
       const createdAt = new Date().toISOString()
-      const senderCountry = await detectCountryFromIp(getClientIp(req))
+      const senderCountry = await detectSenderCountry(req)
 
       if (useCloudPersistence) {
         try {
@@ -384,11 +460,11 @@ app.post('/api/letters', (req, res) => {
 
           const insertPayload = {
             id,
-            sender_name: senderName,
+            sender_name: safeSenderName,
             sender_country: senderCountry,
-            recipient_name: recipientName,
+            recipient_name: safeRecipientName,
             recipient_email: recipientEmail || null,
-            letter_content: letterContent,
+            letter_content: safeLetterContent,
             delay_minutes: safeDelayMinutes,
             image_urls: imageUrls,
             video_urls: videoUrls,
@@ -406,11 +482,11 @@ app.post('/api/letters', (req, res) => {
 
           return res.json({
             id,
-            senderName,
-            recipientName,
+            senderName: safeSenderName,
+            recipientName: safeRecipientName,
             senderCountry,
             recipientEmail,
-            letterContent,
+            letterContent: safeLetterContent,
             delayMinutes: safeDelayMinutes,
             delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
             imageUrls,
@@ -425,11 +501,11 @@ app.post('/api/letters', (req, res) => {
           console.error('Cloud persistence failed, fallback to local:', cloudError)
           const localLetter = persistLocalLetter({
             id,
-            senderName,
-            recipientName,
+            senderName: safeSenderName,
+            recipientName: safeRecipientName,
             senderCountry,
             recipientEmail,
-            letterContent,
+            letterContent: safeLetterContent,
             safeDelayMinutes,
             imageFiles,
             videoFiles,
@@ -446,11 +522,11 @@ app.post('/api/letters', (req, res) => {
 
       const localLetter = persistLocalLetter({
         id,
-        senderName,
-        recipientName,
+        senderName: safeSenderName,
+        recipientName: safeRecipientName,
         senderCountry,
         recipientEmail,
-        letterContent,
+        letterContent: safeLetterContent,
         safeDelayMinutes,
         imageFiles,
         videoFiles,

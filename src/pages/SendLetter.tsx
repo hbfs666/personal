@@ -448,8 +448,8 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     setIsLoading(true)
 
     // 檢查必填欄位
-    if (!formData.senderName || !formData.letterContent) {
-      setError('請填入你的名字和信件內容')
+    if (!formData.senderName.trim() || !formData.recipientName.trim()) {
+      setError('請填入你的名字和筆友的名字')
       setIsLoading(false)
       return
     }
@@ -653,7 +653,6 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
             onChange={handleInputChange}
             placeholder="寫下你的心語..."
             rows={6}
-            required
             className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 bg-indigo-50 resize-none"
           />
         </div>

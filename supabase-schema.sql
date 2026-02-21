@@ -13,6 +13,13 @@ create table if not exists public.letters (
   audio_url text,
   stamp_data text,
   paper_theme text not null default 'classic',
+  opening_animation text not null default 'unfold',
+  ambience_music boolean not null default false,
+  handwriting_mode boolean not null default false,
+  stickers text[] not null default '{}',
+  capsule_seal text not null default 'wax',
+  signature_data text,
+  holiday_theme text not null default 'none',
   schedule_time timestamptz not null,
   created_at timestamptz not null default now()
 );
@@ -28,5 +35,26 @@ alter table if exists public.letters
 
 alter table if exists public.letters
   add column if not exists video_urls text[] not null default '{}';
+
+alter table if exists public.letters
+  add column if not exists opening_animation text not null default 'unfold';
+
+alter table if exists public.letters
+  add column if not exists ambience_music boolean not null default false;
+
+alter table if exists public.letters
+  add column if not exists handwriting_mode boolean not null default false;
+
+alter table if exists public.letters
+  add column if not exists stickers text[] not null default '{}';
+
+alter table if exists public.letters
+  add column if not exists capsule_seal text not null default 'wax';
+
+alter table if exists public.letters
+  add column if not exists signature_data text;
+
+alter table if exists public.letters
+  add column if not exists holiday_theme text not null default 'none';
 
 create index if not exists idx_letters_created_at on public.letters (created_at desc);

@@ -63,6 +63,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [brushColor, setBrushColor] = useState('#1e3a8a')
   const [brushSize, setBrushSize] = useState(6)
   const [isEraserMode, setIsEraserMode] = useState(false)
+  const [ambienceMusic, setAmbienceMusic] = useState(false)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -233,6 +234,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
       if (['classic', 'warm', 'mint', 'lavender'].includes(draft.paperTheme)) {
         setPaperTheme(draft.paperTheme)
       }
+      setAmbienceMusic(draft.ambienceMusic === true)
     } catch (draftError) {
       console.error('Failed to parse draft:', draftError)
     }
@@ -249,11 +251,21 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
       delayValue,
       stampDataUrl,
       stampTemplate,
-      paperTheme
+      paperTheme,
+      ambienceMusic
     }
 
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload))
-  }, [formData, delayUnit, delayValue, stampDataUrl, stampTemplate, paperTheme, shareLink])
+  }, [
+    formData,
+    delayUnit,
+    delayValue,
+    stampDataUrl,
+    stampTemplate,
+    paperTheme,
+    ambienceMusic,
+    shareLink
+  ])
 
   const initializeStampCanvas = (
     withExistingStamp = true,
@@ -396,6 +408,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     setDelayUnit('day')
     setDelayValue(5)
     setPaperTheme('classic')
+    setAmbienceMusic(false)
     mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
     setMediaPreviews([])
     setAudioFile(null)
@@ -461,6 +474,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
       formDataToSend.append('letterContent', formData.letterContent)
       formDataToSend.append('delayMinutes', getDelayMinutes().toString())
       formDataToSend.append('paperTheme', paperTheme)
+      formDataToSend.append('ambienceMusic', ambienceMusic ? 'true' : 'false')
       
       if (fileInputRef.current?.files) {
         Array.from(fileInputRef.current.files).forEach(file => {
@@ -669,6 +683,17 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
             ))}
           </select>
           <p className="text-xs text-gray-600 mt-2">收信頁會用這個主題樣式展示正文</p>
+        </div>
+
+        <div className="bg-emerald-50 p-4 rounded-lg border-2 border-emerald-200">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <input
+              type="checkbox"
+              checked={ambienceMusic}
+              onChange={(e) => setAmbienceMusic(e.target.checked)}
+            />
+            🎵 解鎖後播放背景音樂
+          </label>
         </div>
 
         <div>

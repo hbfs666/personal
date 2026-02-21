@@ -1,13 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import PaperAirplaneAnimation from '../components/PaperAirplaneAnimation.tsx'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const AMBIENT_TRACK_PATH =
+  import.meta.env.VITE_AMBIENT_MUSIC_PATH || "/music/[no copyright music] 'In Dreamland ' background music.mp3"
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 const mediaUrl = (path: string) => {
   if (/^https?:\/\//.test(path)) return path
   return `${API_BASE_URL}${path}`
 }
+
+const encodedPublicPath = (path: string) =>
+  path
+    .split('/')
+    .map((segment, index) => (index === 0 && segment === '' ? '' : encodeURIComponent(segment)))
+    .join('/')
 
 interface Letter {
   id: string
@@ -20,6 +28,7 @@ interface Letter {
   audioUrl?: string | null
   stampData?: string | null
   paperTheme?: 'classic' | 'warm' | 'mint' | 'lavender'
+  ambienceMusic?: boolean
   delayDays?: number
   delayMinutes?: number
   scheduleTime: string
@@ -40,6 +49,15 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const [progress, setProgress] = useState(0)
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
+  const [musicOn, setMusicOn] = useState(false)
+  const [confettiPieces, setConfettiPieces] = useState<Array<{
+    id: number
+    left: string
+    duration: number
+    delay: number
+    emoji: string
+  }>>([])
+  const ambientAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const paperThemeClassMap = {
     classic: 'bg-yellow-50 border-yellow-200 text-gray-700',
@@ -203,6 +221,61 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
     }
   }, [letter])
 
+  useEffect(() => {
+    if (letter?.ambienceMusic === true) {
+      setMusicOn(true)
+    } else {
+      setMusicOn(false)
+    }
+  }, [letter?.id, letter?.ambienceMusic])
+
+  useEffect(() => {
+    if (letter?.isRevealed) {
+      const emojis = ['✨', '🎉', '💫', '🎊', '🧸', '🌟']
+      const generated = Array.from({ length: 14 }, (_, index) => ({
+        id: index,
+        left: `${Math.random() * 90 + 5}%`,
+        duration: 2.2 + Math.random() * 1.8,
+        delay: Math.random() * 1.2,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)]
+      }))
+      setConfettiPieces(generated)
+    } else {
+      setConfettiPieces([])
+    }
+  }, [letter?.isRevealed, letter?.id])
+
+  useEffect(() => {
+    const audio = new Audio(encodedPublicPath(AMBIENT_TRACK_PATH))
+    audio.loop = true
+    audio.volume = 0.35
+    audio.preload = 'auto'
+    ambientAudioRef.current = audio
+
+    return () => {
+      audio.pause()
+      audio.currentTime = 0
+      ambientAudioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const ambientAudio = ambientAudioRef.current
+    if (!ambientAudio) {
+      return
+    }
+
+    if (!letter?.isRevealed || letter.ambienceMusic === false || !musicOn) {
+      ambientAudio.pause()
+      ambientAudio.currentTime = 0
+      return
+    }
+
+    ambientAudio.play().catch((audioError) => {
+      console.error('Ambient audio start failed:', audioError)
+    })
+  }, [letter?.isRevealed, letter?.ambienceMusic, musicOn])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-transparent flex items-center justify-center">
@@ -273,6 +346,17 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
           >
             {shared ? '✓ 已分享' : '📤 分享連結'}
           </button>
+          {letter.isRevealed && letter.ambienceMusic !== false && (
+            <button
+              type="button"
+              onClick={() => setMusicOn((prev) => !prev)}
+              className={`px-4 py-2 rounded-lg font-semibold text-white transition ${
+                musicOn ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-500 hover:bg-gray-600'
+              }`}
+            >
+              {musicOn ? '🎵 氛圍音樂開' : '🔇 氛圍音樂關'}
+            </button>
+          )}
         </div>
 
         <motion.div
@@ -305,7 +389,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
           </div>
 
           {/* Status Bar */}
-          <div className="bg-blue-50 p-6 border-b-2 border-blue-200">
+          <div className="bg-blue-50 border-blue-200 p-6 border-b-2">
             {letter.isRevealed ? (
               <div className="text-center">
                 <motion.div
@@ -342,7 +426,19 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
           </div>
 
           {/* Content */}
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 relative overflow-hidden">
+            {letter.isRevealed && confettiPieces.map((piece) => (
+              <motion.div
+                key={piece.id}
+                className="absolute text-lg pointer-events-none"
+                style={{ left: piece.left, top: '-8%' }}
+                initial={{ y: -10, opacity: 0 }}
+                animate={{ y: ['0%', '125%'], opacity: [0, 1, 0] }}
+                transition={{ duration: piece.duration, delay: piece.delay, repeat: Infinity, repeatDelay: 1 }}
+              >
+                {piece.emoji}
+              </motion.div>
+            ))}
             {/* Audio Section */}
             {letter.audioUrl && (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
@@ -471,12 +567,14 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
             {/* Letter Content */}
             {letter.isRevealed ? (
               <motion.div
-                initial={{ opacity: 0.3, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, filter: 'blur(0px)' }}
-                transition={{ duration: 0.5 }}
-                className={`p-6 rounded-lg border-2 ${paperThemeClassName}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+                className={`p-6 rounded-lg border-2 ${paperThemeClassName} relative overflow-hidden`}
               >
-                <p className="whitespace-pre-wrap leading-relaxed text-sm">
+                <p
+                  className="whitespace-pre-wrap leading-relaxed text-sm"
+                >
                   {letter.letterContent}
                 </p>
               </motion.div>

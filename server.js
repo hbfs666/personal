@@ -224,6 +224,9 @@ const mapDbLetter = (row) => ({
   audioUrl: row.audio_url || null,
   stampData: row.stamp_data || null,
   paperTheme: row.paper_theme || 'classic',
+  ambienceMusic: row.ambience_music === true,
+  stickers: row.stickers || [],
+  holidayTheme: row.holiday_theme || 'none',
   scheduleTime: row.schedule_time,
   createdAt: row.created_at
 })
@@ -259,6 +262,9 @@ const persistLocalLetter = ({
   audioFile,
   stampData,
   paperTheme,
+  ambienceMusic,
+  stickers,
+  holidayTheme,
   scheduleTime,
   createdAt,
   filesAreInMemory
@@ -291,6 +297,9 @@ const persistLocalLetter = ({
     audioUrl,
     stampData: stampData || null,
     paperTheme: paperTheme || 'classic',
+    ambienceMusic: ambienceMusic === true,
+    stickers: Array.isArray(stickers) ? stickers : [],
+    holidayTheme: holidayTheme || 'none',
     scheduleTime,
     createdAt
   }
@@ -422,7 +431,19 @@ app.post('/api/letters', (req, res) => {
       const imageFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('image/'))
       const videoFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('video/'))
       const audioFile = fileGroups.audio?.[0] || null
-      const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName, stampData, paperTheme } = req.body
+      const {
+        recipientEmail,
+        letterContent,
+        delayMinutes,
+        delayDays,
+        recipientName,
+        senderName,
+        stampData,
+        paperTheme,
+        ambienceMusic,
+        stickers,
+        holidayTheme
+      } = req.body
 
       const parsedDelayMinutes = Number.parseInt(delayMinutes, 10)
       const fallbackDelayMinutes = Number.parseInt(delayDays, 10) * 24 * 60
@@ -433,6 +454,18 @@ app.post('/api/letters', (req, res) => {
       const safeLetterContent = typeof letterContent === 'string' ? letterContent : ''
       const safeSenderName = typeof senderName === 'string' ? senderName.trim() : ''
       const safeRecipientName = typeof recipientName === 'string' ? recipientName.trim() : ''
+      const safeAmbienceMusic = ambienceMusic === 'true'
+      const safeHolidayTheme = ['none', 'christmas', 'birthday', 'newyear'].includes(holidayTheme) ? holidayTheme : 'none'
+
+      let safeStickers = []
+      try {
+        const parsed = JSON.parse(stickers || '[]')
+        if (Array.isArray(parsed)) {
+          safeStickers = parsed.filter((item) => ['star', 'flower', 'postmark'].includes(item))
+        }
+      } catch {
+        safeStickers = []
+      }
 
       if (!safeSenderName || !safeRecipientName) {
         return res.status(400).json({ message: '缺少必填欄位' })
@@ -471,6 +504,9 @@ app.post('/api/letters', (req, res) => {
             audio_url: audioUrl,
             stamp_data: stampData || null,
             paper_theme: paperTheme || 'classic',
+            ambience_music: safeAmbienceMusic,
+            stickers: safeStickers,
+            holiday_theme: safeHolidayTheme,
             schedule_time: scheduleTime,
             created_at: createdAt
           }
@@ -494,6 +530,9 @@ app.post('/api/letters', (req, res) => {
             audioUrl,
             stampData: stampData || null,
             paperTheme: paperTheme || 'classic',
+            ambienceMusic: safeAmbienceMusic,
+            stickers: safeStickers,
+            holidayTheme: safeHolidayTheme,
             scheduleTime,
             createdAt
           })
@@ -512,6 +551,9 @@ app.post('/api/letters', (req, res) => {
             audioFile,
             stampData,
             paperTheme,
+            ambienceMusic: safeAmbienceMusic,
+            stickers: safeStickers,
+            holidayTheme: safeHolidayTheme,
             scheduleTime,
             createdAt,
             filesAreInMemory: true
@@ -533,6 +575,9 @@ app.post('/api/letters', (req, res) => {
         audioFile,
         stampData,
         paperTheme,
+        ambienceMusic: safeAmbienceMusic,
+        stickers: safeStickers,
+        holidayTheme: safeHolidayTheme,
         scheduleTime,
         createdAt,
         filesAreInMemory: false

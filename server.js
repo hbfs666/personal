@@ -108,6 +108,7 @@ const mapDbLetter = (row) => ({
   imageUrls: row.image_urls || [],
   audioUrl: row.audio_url || null,
   stampData: row.stamp_data || null,
+  paperTheme: row.paper_theme || 'classic',
   scheduleTime: row.schedule_time,
   createdAt: row.created_at
 })
@@ -140,6 +141,7 @@ const persistLocalLetter = ({
   imageFiles,
   audioFile,
   stampData,
+  paperTheme,
   scheduleTime,
   createdAt,
   filesAreInMemory
@@ -165,6 +167,7 @@ const persistLocalLetter = ({
     imageUrls,
     audioUrl,
     stampData: stampData || null,
+    paperTheme: paperTheme || 'classic',
     scheduleTime,
     createdAt
   }
@@ -294,7 +297,7 @@ app.post('/api/letters', (req, res) => {
       const fileGroups = req.files || {}
       const imageFiles = fileGroups.images || []
       const audioFile = fileGroups.audio?.[0] || null
-      const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName, stampData } = req.body
+      const { recipientEmail, letterContent, delayMinutes, delayDays, recipientName, senderName, stampData, paperTheme } = req.body
 
       const parsedDelayMinutes = Number.parseInt(delayMinutes, 10)
       const fallbackDelayMinutes = Number.parseInt(delayDays, 10) * 24 * 60
@@ -332,6 +335,7 @@ app.post('/api/letters', (req, res) => {
             image_urls: imageUrls,
             audio_url: audioUrl,
             stamp_data: stampData || null,
+            paper_theme: paperTheme || 'classic',
             schedule_time: scheduleTime,
             created_at: createdAt
           }
@@ -352,6 +356,7 @@ app.post('/api/letters', (req, res) => {
             imageUrls,
             audioUrl,
             stampData: stampData || null,
+            paperTheme: paperTheme || 'classic',
             scheduleTime,
             createdAt
           })
@@ -367,6 +372,7 @@ app.post('/api/letters', (req, res) => {
             imageFiles,
             audioFile,
             stampData,
+            paperTheme,
             scheduleTime,
             createdAt,
             filesAreInMemory: true
@@ -385,6 +391,7 @@ app.post('/api/letters', (req, res) => {
         imageFiles,
         audioFile,
         stampData,
+        paperTheme,
         scheduleTime,
         createdAt,
         filesAreInMemory: false

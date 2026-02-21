@@ -17,6 +17,7 @@ interface Letter {
   imageUrls?: string[]
   audioUrl?: string | null
   stampData?: string | null
+  paperTheme?: 'classic' | 'warm' | 'mint' | 'lavender'
   delayDays?: number
   delayMinutes?: number
   scheduleTime: string
@@ -37,6 +38,13 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const [progress, setProgress] = useState(0)
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
+
+  const paperThemeClassMap = {
+    classic: 'bg-yellow-50 border-yellow-200 text-gray-700',
+    warm: 'bg-orange-50 border-orange-200 text-orange-900',
+    mint: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+    lavender: 'bg-violet-50 border-violet-200 text-violet-900'
+  }
 
   const getTotalDelayMinutes = (currentLetter: Letter) => {
     if (typeof currentLetter.delayMinutes === 'number') {
@@ -210,6 +218,8 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
 
   const totalDelayMinutes = getTotalDelayMinutes(letter)
   const delayDisplayText = getDelayDisplayText(totalDelayMinutes)
+  const selectedPaperTheme = letter.paperTheme || 'classic'
+  const paperThemeClassName = paperThemeClassMap[selectedPaperTheme] || paperThemeClassMap.classic
 
   return (
     <div className="min-h-screen bg-transparent py-12 px-4">
@@ -392,9 +402,9 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                 initial={{ opacity: 0.3, filter: 'blur(10px)' }}
                 animate={{ opacity: 1, filter: 'blur(0px)' }}
                 transition={{ duration: 0.5 }}
-                className="bg-yellow-50 p-6 rounded-lg border-2 border-yellow-200"
+                className={`p-6 rounded-lg border-2 ${paperThemeClassName}`}
               >
-                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed text-sm">
+                <p className="whitespace-pre-wrap leading-relaxed text-sm">
                   {letter.letterContent}
                 </p>
               </motion.div>

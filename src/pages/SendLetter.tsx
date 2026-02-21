@@ -1,10 +1,23 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 const STAMP_BG_COLOR = '#fff7ed'
 const STAMP_BORDER_COLOR = '#f59e0b'
+const DRAFT_STORAGE_KEY = 'letter_draft_v1'
+const PAPER_THEME_OPTIONS = [
+  { value: 'classic', label: '經典信紙' },
+  { value: 'warm', label: '暖黃信紙' },
+  { value: 'mint', label: '薄荷信紙' },
+  { value: 'lavender', label: '薰衣草信紙' }
+] as const
+const STAMP_TEMPLATE_OPTIONS = [
+  { value: 'classic', label: '經典' },
+  { value: 'star', label: '星星' },
+  { value: 'heart', label: '愛心' },
+  { value: 'wave', label: '波紋' }
+] as const
 const STAMP_COLOR_OPTIONS = [
   '#0f172a', '#1e3a8a', '#1d4ed8', '#0ea5e9', '#06b6d4',
   '#065f46', '#16a34a', '#65a30d', '#eab308', '#f59e0b',
@@ -39,6 +52,8 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [shared, setShared] = useState(false)
   const [stampDataUrl, setStampDataUrl] = useState<string | null>(null)
   const [showStampEditor, setShowStampEditor] = useState(false)
+  const [stampTemplate, setStampTemplate] = useState<'classic' | 'star' | 'heart' | 'wave'>('classic')
+  const [paperTheme, setPaperTheme] = useState<'classic' | 'warm' | 'mint' | 'lavender'>('classic')
   const [brushColor, setBrushColor] = useState('#1e3a8a')
   const [brushSize, setBrushSize] = useState(6)
   const [isEraserMode, setIsEraserMode] = useState(false)
@@ -105,6 +120,127 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     }
   }
 
+  const drawStampTemplate = (
+    ctx: CanvasRenderingContext2D,
+    template: 'classic' | 'star' | 'heart' | 'wave',
+    width: number,
+    height: number
+  ) => {
+    ctx.save()
+    ctx.strokeStyle = '#f59e0b'
+    ctx.fillStyle = '#f59e0b'
+    ctx.globalAlpha = 0.35
+
+    if (template === 'classic') {
+      for (let x = 14; x < width; x += 20) {
+        for (let y = 14; y < height; y += 20) {
+          ctx.beginPath()
+          ctx.arc(x, y, 1.5, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
+
+    if (template === 'star') {
+      for (let x = 20; x < width; x += 42) {
+        for (let y = 20; y < height; y += 42) {
+          ctx.beginPath()
+          ctx.moveTo(x, y - 6)
+          ctx.lineTo(x + 2, y - 2)
+          ctx.lineTo(x + 6, y - 1)
+          ctx.lineTo(x + 3, y + 2)
+          ctx.lineTo(x + 4, y + 6)
+          ctx.lineTo(x, y + 4)
+          ctx.lineTo(x - 4, y + 6)
+          ctx.lineTo(x - 3, y + 2)
+          ctx.lineTo(x - 6, y - 1)
+          ctx.lineTo(x - 2, y - 2)
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+    }
+
+    if (template === 'heart') {
+      for (let x = 18; x < width; x += 36) {
+        for (let y = 20; y < height; y += 36) {
+          ctx.beginPath()
+          ctx.moveTo(x, y + 4)
+          ctx.bezierCurveTo(x - 6, y - 2, x - 12, y + 3, x, y + 12)
+          ctx.bezierCurveTo(x + 12, y + 3, x + 6, y - 2, x, y + 4)
+          ctx.fill()
+        }
+      }
+    }
+
+    if (template === 'wave') {
+      ctx.lineWidth = 1.5
+      for (let y = 24; y < height; y += 26) {
+        ctx.beginPath()
+        for (let x = 8; x <= width - 8; x += 2) {
+          const curveY = y + Math.sin((x / width) * Math.PI * 4) * 3
+          if (x === 8) ctx.moveTo(x, curveY)
+          else ctx.lineTo(x, curveY)
+        }
+        ctx.stroke()
+      }
+    }
+
+    ctx.restore()
+  }
+
+  useEffect(() => {
+    const rawDraft = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!rawDraft) {
+      return
+    }
+
+    try {
+      const draft = JSON.parse(rawDraft)
+      if (draft.formData) {
+        setFormData({
+          senderName: draft.formData.senderName || '',
+          recipientName: draft.formData.recipientName || '',
+          letterContent: draft.formData.letterContent || ''
+        })
+      }
+      if (['immediate', 'day', 'hour', 'minute'].includes(draft.delayUnit)) {
+        setDelayUnit(draft.delayUnit)
+      }
+      if (Number.isFinite(draft.delayValue)) {
+        setDelayValue(draft.delayValue)
+      }
+      if (typeof draft.stampDataUrl === 'string') {
+        setStampDataUrl(draft.stampDataUrl)
+      }
+      if (['classic', 'star', 'heart', 'wave'].includes(draft.stampTemplate)) {
+        setStampTemplate(draft.stampTemplate)
+      }
+      if (['classic', 'warm', 'mint', 'lavender'].includes(draft.paperTheme)) {
+        setPaperTheme(draft.paperTheme)
+      }
+    } catch (draftError) {
+      console.error('Failed to parse draft:', draftError)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (shareLink) {
+      return
+    }
+
+    const draftPayload = {
+      formData,
+      delayUnit,
+      delayValue,
+      stampDataUrl,
+      stampTemplate,
+      paperTheme
+    }
+
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload))
+  }, [formData, delayUnit, delayValue, stampDataUrl, stampTemplate, paperTheme, shareLink])
+
   const initializeStampCanvas = (withExistingStamp = true) => {
     const canvas = stampCanvasRef.current
     if (!canvas) {
@@ -121,6 +257,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     ctx.strokeStyle = STAMP_BORDER_COLOR
     ctx.lineWidth = 3
     ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3)
+    drawStampTemplate(ctx, stampTemplate, canvas.width, canvas.height)
 
     if (withExistingStamp && stampDataUrl) {
       const image = new Image()
@@ -210,6 +347,11 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     requestAnimationFrame(() => initializeStampCanvas(true))
   }
 
+  const handleChangeTemplate = (template: 'classic' | 'star' | 'heart' | 'wave') => {
+    setStampTemplate(template)
+    requestAnimationFrame(() => initializeStampCanvas(false))
+  }
+
   const handleSelectBrushColor = (color: string) => {
     setBrushColor(color)
     setIsEraserMode(false)
@@ -226,6 +368,28 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     }
     setStampDataUrl(canvas.toDataURL('image/png'))
     setShowStampEditor(false)
+  }
+
+  const resetComposer = () => {
+    setFormData({
+      senderName: '',
+      recipientName: '',
+      letterContent: ''
+    })
+    setDelayUnit('day')
+    setDelayValue(5)
+    setPaperTheme('classic')
+    setImagePreviews([])
+    setAudioFile(null)
+    setStampDataUrl(null)
+    setStampTemplate('classic')
+    setShowStampEditor(false)
+    setBrushColor('#1e3a8a')
+    setBrushSize(6)
+    setIsEraserMode(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (audioInputRef.current) audioInputRef.current.value = ''
+    localStorage.removeItem(DRAFT_STORAGE_KEY)
   }
 
   const handleCopyLink = async () => {
@@ -278,6 +442,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
       formDataToSend.append('recipientName', formData.recipientName)
       formDataToSend.append('letterContent', formData.letterContent)
       formDataToSend.append('delayMinutes', getDelayMinutes().toString())
+      formDataToSend.append('paperTheme', paperTheme)
       
       if (fileInputRef.current?.files) {
         Array.from(fileInputRef.current.files).forEach(file => {
@@ -320,6 +485,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
 
       const letter = await response.json()
       const link = `${window.location.origin}?id=${letter.id}`
+      localStorage.removeItem(DRAFT_STORAGE_KEY)
       setShareLink(link)
       onLetterSent(letter.id)
     } catch (error) {
@@ -391,19 +557,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
         <button
           onClick={() => {
             setShareLink(null)
-            setFormData({
-              senderName: '',
-              recipientName: '',
-              letterContent: ''
-            })
-            setDelayUnit('day')
-            setDelayValue(5)
-            setImagePreviews([])
-            setAudioFile(null)
-            setStampDataUrl(null)
-            setShowStampEditor(false)
-            if (fileInputRef.current) fileInputRef.current.value = ''
-            if (audioInputRef.current) audioInputRef.current.value = ''
+            resetComposer()
           }}
           className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
         >
@@ -430,6 +584,16 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
         </motion.div>
       )}
       <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={resetComposer}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-800 transition"
+          >
+            🗑 清除草稿
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -474,6 +638,20 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
             required
             className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 bg-indigo-50 resize-none"
           />
+        </div>
+
+        <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">🧾 信紙主題</label>
+          <select
+            value={paperTheme}
+            onChange={(e) => setPaperTheme(e.target.value as 'classic' | 'warm' | 'mint' | 'lavender')}
+            className="px-4 py-2 border-2 border-purple-300 rounded-lg bg-white focus:outline-none focus:border-purple-600"
+          >
+            {PAPER_THEME_OPTIONS.map((themeOption) => (
+              <option key={themeOption.value} value={themeOption.value}>{themeOption.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-600 mt-2">收信頁會用這個主題樣式展示正文</p>
         </div>
 
         <div>
@@ -586,6 +764,22 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
         {showStampEditor && (
           <div className="bg-white border-2 border-amber-300 rounded-lg p-4 space-y-3">
             <p className="font-semibold text-amber-900">在小郵票內自由塗鴉</p>
+            <div className="flex flex-wrap gap-2">
+              {STAMP_TEMPLATE_OPTIONS.map((templateOption) => (
+                <button
+                  key={templateOption.value}
+                  type="button"
+                  onClick={() => handleChangeTemplate(templateOption.value)}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-semibold transition ${
+                    stampTemplate === templateOption.value
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+                  }`}
+                >
+                  {templateOption.label}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               {STAMP_COLOR_OPTIONS.map((color) => (
                 <button

@@ -7,6 +7,8 @@ import type { DraftRecord } from './types/draft'
 import './index.css'
 
 const DRAFT_BOX_STORAGE_KEY = 'letter_draft_box_v1'
+const DRAFT_ASSET_DB_NAME = 'letter_draft_assets_db'
+const DRAFT_ASSET_STORE_NAME = 'draft_assets'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<'send' | 'view' | 'drafts'>('send')
@@ -115,6 +117,54 @@ function App() {
     setCurrentPage('send')
   }
 
+  const deleteDraftAssets = async (draftId: string) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      return
+    }
+
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open(DRAFT_ASSET_DB_NAME, 1)
+      request.onupgradeneeded = () => {
+        const nextDb = request.result
+        if (!nextDb.objectStoreNames.contains(DRAFT_ASSET_STORE_NAME)) {
+          nextDb.createObjectStore(DRAFT_ASSET_STORE_NAME, { keyPath: 'draftId' })
+        }
+      }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error || new Error('開啟附件資料庫失敗'))
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DRAFT_ASSET_STORE_NAME, 'readwrite')
+      const store = tx.objectStore(DRAFT_ASSET_STORE_NAME)
+      store.delete(draftId)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error || new Error('刪除草稿附件失敗'))
+      tx.onabort = () => reject(tx.error || new Error('刪除草稿附件被中止'))
+    })
+
+    db.close()
+  }
+
+  const handleDeleteDraft = async (draft: DraftRecord) => {
+    const confirmed = window.confirm(`確定要刪除草稿「${draft.title}」嗎？`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deleteDraftAssets(draft.id)
+    } catch (error) {
+      console.error('Delete draft assets failed:', error)
+    }
+
+    setDrafts((prev) => prev.filter((item) => item.id !== draft.id))
+
+    if (selectedDraft?.id === draft.id) {
+      setSelectedDraft(null)
+    }
+  }
+
   const handleDraftLoaded = () => {
     setSelectedDraft(null)
   }
@@ -124,7 +174,14 @@ function App() {
   }
 
   if (currentPage === 'drafts') {
-    return <DraftBox drafts={drafts} onBack={handleBackToSend} onOpenDraft={handleOpenDraft} />
+    return (
+      <DraftBox
+        drafts={drafts}
+        onBack={handleBackToSend}
+        onOpenDraft={handleOpenDraft}
+        onDeleteDraft={handleDeleteDraft}
+      />
+    )
   }
 
   return (

@@ -4,9 +4,10 @@ interface DraftBoxProps {
   drafts: DraftRecord[]
   onBack: () => void
   onOpenDraft: (draft: DraftRecord) => void
+  onDeleteDraft: (draft: DraftRecord) => void
 }
 
-export default function DraftBox({ drafts, onBack, onOpenDraft }: DraftBoxProps) {
+export default function DraftBox({ drafts, onBack, onOpenDraft, onDeleteDraft }: DraftBoxProps) {
   const handleOpen = (draft: DraftRecord) => {
     const input = window.prompt(`請輸入草稿「${draft.title}」的查看密碼`)
     if (input === null) return
@@ -64,6 +65,13 @@ export default function DraftBox({ drafts, onBack, onOpenDraft }: DraftBoxProps)
                       className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
                     >
                       🔓 輸入密碼查看
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteDraft(draft)}
+                      className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
+                    >
+                      🗑 刪除草稿
                     </button>
                   </div>
                 </div>

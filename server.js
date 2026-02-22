@@ -413,15 +413,18 @@ app.get('/api/health', async (req, res) => {
 
 app.post('/api/letters', (req, res) => {
   const uploadFields = upload.fields([
-    { name: 'images', maxCount: 10 },
-    { name: 'image', maxCount: 10 },
-    { name: 'videos', maxCount: 10 },
-    { name: 'video', maxCount: 10 },
+    { name: 'images', maxCount: 30 },
+    { name: 'image', maxCount: 30 },
+    { name: 'videos', maxCount: 30 },
+    { name: 'video', maxCount: 30 },
     { name: 'audio', maxCount: 1 }
   ])
 
   uploadFields(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ message: `上傳錯誤: 檔案欄位不支援或單次上傳數量超過限制（目前最多 30 個圖片/影片）` })
+      }
       return res.status(400).json({ message: `上傳錯誤: ${err.message}` })
     }
     if (err) {

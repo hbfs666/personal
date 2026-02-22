@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import PaperAirplaneAnimation from '../components/PaperAirplaneAnimation.tsx'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const LOCAL_FALLBACK_API_BASE_URL =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+    ? 'http://localhost:3001'
+    : ''
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || LOCAL_FALLBACK_API_BASE_URL || '').replace(/\/$/, '')
 const AMBIENT_TRACK_PATH =
   import.meta.env.VITE_AMBIENT_MUSIC_PATH || "/music/[no copyright music] 'In Dreamland ' background music.mp3"
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
@@ -50,6 +54,7 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
   const [musicOn, setMusicOn] = useState(false)
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null)
   const [confettiPieces, setConfettiPieces] = useState<Array<{
     id: number
     left: string
@@ -228,6 +233,34 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
       setMusicOn(false)
     }
   }, [letter?.id, letter?.ambienceMusic])
+
+  useEffect(() => {
+    if (previewImageIndex === null || !letter?.imageUrls?.length) {
+      return
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewImageIndex(null)
+        return
+      }
+      if (e.key === 'ArrowLeft') {
+        setPreviewImageIndex((prev) => {
+          if (prev === null || !letter.imageUrls?.length) return prev
+          return (prev - 1 + letter.imageUrls.length) % letter.imageUrls.length
+        })
+      }
+      if (e.key === 'ArrowRight') {
+        setPreviewImageIndex((prev) => {
+          if (prev === null || !letter.imageUrls?.length) return prev
+          return (prev + 1) % letter.imageUrls.length
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewImageIndex, letter?.imageUrls])
 
   useEffect(() => {
     if (letter?.isRevealed) {
@@ -488,14 +521,13 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                           className="w-full max-h-96 object-cover"
                         />
                         <div className="flex gap-2 p-3 border-t border-blue-100 bg-blue-50">
-                          <a
-                            href={mediaUrl(imageUrl)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageIndex(index)}
                             className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition"
                           >
-                            🔍 開啟圖片
-                          </a>
+                            🔍 預覽圖片
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDownloadImage(imageUrl, index)}
@@ -594,6 +626,56 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
           </div>
         </motion.div>
       </div>
+
+      {previewImageIndex !== null && letter?.imageUrls && letter.imageUrls.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
+          onClick={() => setPreviewImageIndex(null)}
+        >
+          <div
+            className="relative max-w-5xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const imageCount = letter.imageUrls?.length || 0
+                if (imageCount === 0) return
+                setPreviewImageIndex((previewImageIndex - 1 + imageCount) % imageCount)
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 text-gray-900 font-bold shadow hover:bg-white"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const imageCount = letter.imageUrls?.length || 0
+                if (imageCount === 0) return
+                setPreviewImageIndex((previewImageIndex + 1) % imageCount)
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 text-gray-900 font-bold shadow hover:bg-white"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewImageIndex(null)}
+              className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-gray-800 font-bold shadow hover:bg-gray-100"
+            >
+              ✕
+            </button>
+            <img
+              src={mediaUrl(letter.imageUrls[previewImageIndex])}
+              alt="圖片預覽"
+              className="w-full max-h-[85vh] object-contain rounded-lg bg-black"
+            />
+            <p className="mt-2 text-center text-white text-sm">
+              {previewImageIndex + 1} / {letter.imageUrls.length}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

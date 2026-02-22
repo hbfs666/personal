@@ -2,7 +2,11 @@ import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import type { DraftRecord } from '../types/draft'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const LOCAL_FALLBACK_API_BASE_URL =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+    ? 'http://localhost:3001'
+    : ''
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || LOCAL_FALLBACK_API_BASE_URL || '').replace(/\/$/, '')
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 const STAMP_BG_COLOR = '#fff7ed'
 const STAMP_BORDER_COLOR = '#f59e0b'
@@ -38,6 +42,7 @@ interface MediaPreviewItem {
   url: string
   type: 'image' | 'video'
   name: string
+  file: File
 }
 
 export default function SendLetter({
@@ -76,6 +81,7 @@ export default function SendLetter({
   const [isEraserMode, setIsEraserMode] = useState(false)
   const [ambienceMusic, setAmbienceMusic] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [draggingMediaIndex, setDraggingMediaIndex] = useState<number | null>(null)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -110,9 +116,11 @@ export default function SendLetter({
         setMediaPreviews(prev => [...prev, {
           url: previewUrl,
           type: mediaType,
-          name: file.name
+          name: file.name,
+          file
         }])
       })
+      e.target.value = ''
     }
   }
 
@@ -124,15 +132,23 @@ export default function SendLetter({
       }
       return prev.filter((_, i) => i !== index)
     })
-    if (fileInputRef.current) {
-      const dt = new DataTransfer()
-      Array.from(fileInputRef.current.files || []).forEach((file, i) => {
-        if (i !== index) {
-          dt.items.add(file)
-        }
-      })
-      fileInputRef.current.files = dt.files
+  }
+
+  const moveMediaByDrag = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+      return
     }
+
+    setMediaPreviews((prev) => {
+      if (fromIndex >= prev.length || toIndex >= prev.length) {
+        return prev
+      }
+
+      const next = [...prev]
+      const [dragged] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, dragged)
+      return next
+    })
   }
 
   const handleAudioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -559,11 +575,9 @@ export default function SendLetter({
       formDataToSend.append('paperTheme', paperTheme)
       formDataToSend.append('ambienceMusic', ambienceMusic ? 'true' : 'false')
       
-      if (fileInputRef.current?.files) {
-        Array.from(fileInputRef.current.files).forEach(file => {
-          formDataToSend.append('images', file)
-        })
-      }
+      mediaPreviews.forEach((item) => {
+        formDataToSend.append('images', item.file)
+      })
 
       if (audioFile) {
         formDataToSend.append('audio', audioFile)
@@ -809,10 +823,20 @@ export default function SendLetter({
             <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
               {mediaPreviews.map((preview, index) => (
                 <motion.div
-                  key={index}
+                  key={preview.url}
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="relative group"
+                  className={`relative group cursor-move ${draggingMediaIndex === index ? 'opacity-70' : ''}`}
+                  draggable
+                  onDragStart={() => setDraggingMediaIndex(index)}
+                  onDragEnd={() => setDraggingMediaIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (draggingMediaIndex === null) return
+                    moveMediaByDrag(draggingMediaIndex, index)
+                    setDraggingMediaIndex(null)
+                  }}
                 >
                   {preview.type === 'image' ? (
                     <img
@@ -845,6 +869,9 @@ export default function SendLetter({
           <p className="text-xs text-gray-600 mt-2">
             {mediaPreviews.length > 0 && `已上傳 ${mediaPreviews.length} 個媒體檔案`}
           </p>
+          {mediaPreviews.length > 1 && (
+            <p className="text-xs text-gray-500 mt-1">可直接拖動縮圖調整顯示與發送順序</p>
+          )}
         </div>
 
         <div>

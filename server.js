@@ -274,6 +274,31 @@ const uploadFilesSequentially = async (files, folder, resourceType, labelPrefix)
   return urls
 }
 
+const insertLetterWithColumnFallback = async (payload) => {
+  const mutablePayload = { ...payload }
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const { error } = await supabase.from('letters').insert(mutablePayload)
+    if (!error) {
+      return
+    }
+
+    const message = error.message || ''
+    const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i)
+    const missingColumn = missingColumnMatch?.[1]
+
+    if (missingColumn && Object.prototype.hasOwnProperty.call(mutablePayload, missingColumn)) {
+      console.warn(`Supabase column missing, dropping field and retrying insert: ${missingColumn}`)
+      delete mutablePayload[missingColumn]
+      continue
+    }
+
+    throw new Error(`資料庫寫入失敗: ${message}`)
+  }
+
+  throw new Error('資料庫寫入失敗: 欄位相容性重試超過上限')
+}
+
 const writeBufferFileToLocal = (file) => {
   const ext = path.extname(file.originalname || '') || ''
   const safeExt = ext.slice(0, 10)
@@ -568,10 +593,7 @@ app.post('/api/letters', (req, res) => {
             created_at: createdAt
           }
 
-          const { error } = await supabase.from('letters').insert(insertPayload)
-          if (error) {
-            throw new Error(`資料庫寫入失敗: ${error.message}`)
-          }
+          await insertLetterWithColumnFallback(insertPayload)
 
           return res.json({
             id,

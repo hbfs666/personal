@@ -414,6 +414,9 @@ app.get('/api/health', async (req, res) => {
 app.post('/api/letters', (req, res) => {
   const uploadFields = upload.fields([
     { name: 'images', maxCount: 10 },
+    { name: 'image', maxCount: 10 },
+    { name: 'videos', maxCount: 10 },
+    { name: 'video', maxCount: 10 },
     { name: 'audio', maxCount: 1 }
   ])
 
@@ -427,7 +430,12 @@ app.post('/api/letters', (req, res) => {
 
     try {
       const fileGroups = req.files || {}
-      const mediaFiles = fileGroups.images || []
+      const mediaFiles = [
+        ...(fileGroups.images || []),
+        ...(fileGroups.image || []),
+        ...(fileGroups.videos || []),
+        ...(fileGroups.video || [])
+      ]
       const imageFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('image/'))
       const videoFiles = mediaFiles.filter((file) => file.mimetype?.startsWith('video/'))
       const audioFile = fileGroups.audio?.[0] || null

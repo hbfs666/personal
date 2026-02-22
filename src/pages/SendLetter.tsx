@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
+import type { DraftRecord } from '../types/draft'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`
@@ -27,6 +28,10 @@ const STAMP_COLOR_OPTIONS = [
 
 interface SendLetterProps {
   onLetterSent: (id: string) => void
+  onSaveDraft: (draft: DraftRecord) => void
+  onOpenDraftBox: () => void
+  externalDraftToLoad: DraftRecord | null
+  onExternalDraftLoaded: () => void
 }
 
 interface MediaPreviewItem {
@@ -35,7 +40,13 @@ interface MediaPreviewItem {
   name: string
 }
 
-export default function SendLetter({ onLetterSent }: SendLetterProps) {
+export default function SendLetter({
+  onLetterSent,
+  onSaveDraft,
+  onOpenDraftBox,
+  externalDraftToLoad,
+  onExternalDraftLoaded
+}: SendLetterProps) {
   const [formData, setFormData] = useState({
     senderName: '',
     recipientName: '',
@@ -64,6 +75,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
   const [brushSize, setBrushSize] = useState(6)
   const [isEraserMode, setIsEraserMode] = useState(false)
   const [ambienceMusic, setAmbienceMusic] = useState(false)
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -267,6 +279,76 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     shareLink
   ])
 
+  useEffect(() => {
+    if (!externalDraftToLoad) {
+      return
+    }
+
+    const payload = externalDraftToLoad.payload
+    setFormData({
+      senderName: payload.formData.senderName || '',
+      recipientName: payload.formData.recipientName || '',
+      letterContent: payload.formData.letterContent || ''
+    })
+    setDelayUnit(payload.delayUnit)
+    setDelayValue(payload.delayValue)
+    setStampDataUrl(payload.stampDataUrl || null)
+    setStampTemplate(payload.stampTemplate)
+    setPaperTheme(payload.paperTheme)
+    setAmbienceMusic(payload.ambienceMusic === true)
+    setEditingDraftId(externalDraftToLoad.id)
+    setError(null)
+
+    mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
+    setMediaPreviews([])
+    setAudioFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (audioInputRef.current) audioInputRef.current.value = ''
+
+    onExternalDraftLoaded()
+  }, [externalDraftToLoad, mediaPreviews, onExternalDraftLoaded])
+
+  const handleSaveToDraftBox = () => {
+    const titleInput = window.prompt('草稿名稱（留空則自動命名）', `${formData.senderName || '未命名'}→${formData.recipientName || '未命名'}`)
+    if (titleInput === null) {
+      return
+    }
+
+    const password = window.prompt('請設定草稿查看密碼（至少 4 個字）')
+    if (password === null) {
+      return
+    }
+
+    const safePassword = password.trim()
+    if (safePassword.length < 4) {
+      setError('草稿密碼至少需要 4 個字')
+      return
+    }
+
+    const now = new Date().toISOString()
+    const draftRecord: DraftRecord = {
+      id: editingDraftId || (crypto.randomUUID ? crypto.randomUUID() : `draft_${Date.now()}`),
+      title: titleInput.trim() || `${formData.senderName || '未命名'}→${formData.recipientName || '未命名'}`,
+      password: safePassword,
+      createdAt: now,
+      updatedAt: now,
+      payload: {
+        formData,
+        delayUnit,
+        delayValue,
+        stampDataUrl,
+        stampTemplate,
+        paperTheme,
+        ambienceMusic
+      }
+    }
+
+    onSaveDraft(draftRecord)
+    setEditingDraftId(draftRecord.id)
+    setError(null)
+    window.alert('草稿已保存到草稿箱')
+  }
+
   const initializeStampCanvas = (
     withExistingStamp = true,
     template: 'classic' | 'star' | 'heart' | 'wave' = stampTemplate
@@ -418,6 +500,7 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
     setBrushColor('#1e3a8a')
     setBrushSize(6)
     setIsEraserMode(false)
+    setEditingDraftId(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (audioInputRef.current) audioInputRef.current.value = ''
     localStorage.removeItem(DRAFT_STORAGE_KEY)
@@ -616,7 +699,21 @@ export default function SendLetter({ onLetterSent }: SendLetterProps) {
         </motion.div>
       )}
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleSaveToDraftBox}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition"
+          >
+            💾 保存到草稿箱
+          </button>
+          <button
+            type="button"
+            onClick={onOpenDraftBox}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-700 hover:bg-gray-800 text-white transition"
+          >
+            🗂 打開草稿箱
+          </button>
           <button
             type="button"
             onClick={resetComposer}

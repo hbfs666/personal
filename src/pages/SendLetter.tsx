@@ -11,6 +11,8 @@ const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 const STAMP_BG_COLOR = '#fff7ed'
 const STAMP_BORDER_COLOR = '#f59e0b'
 const DRAFT_STORAGE_KEY = 'letter_draft_v1'
+const DRAFT_ASSET_DB_NAME = 'letter_draft_assets_db'
+const DRAFT_ASSET_STORE_NAME = 'draft_assets'
 const PAPER_THEME_OPTIONS = [
   { value: 'classic', label: '經典信紙' },
   { value: 'warm', label: '暖黃信紙' },
@@ -43,6 +45,13 @@ interface MediaPreviewItem {
   type: 'image' | 'video'
   name: string
   file: File
+}
+
+interface DraftAssetRecord {
+  draftId: string
+  mediaFiles: File[]
+  audioFile: File | null
+  updatedAt: string
 }
 
 export default function SendLetter({
@@ -105,6 +114,55 @@ export default function SendLetter({
     if (delayUnit === 'day') return `${delayValue} 天後解鎖`
     if (delayUnit === 'hour') return `${delayValue} 小時後解鎖`
     return `${delayValue} 分鐘後解鎖`
+  }
+
+  const openDraftAssetDb = () => new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('瀏覽器不支援 IndexedDB'))
+      return
+    }
+
+    const request = window.indexedDB.open(DRAFT_ASSET_DB_NAME, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(DRAFT_ASSET_STORE_NAME)) {
+        db.createObjectStore(DRAFT_ASSET_STORE_NAME, { keyPath: 'draftId' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('開啟草稿附件資料庫失敗'))
+  })
+
+  const saveDraftAssets = async (draftId: string, mediaFiles: File[], draftAudioFile: File | null) => {
+    const db = await openDraftAssetDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DRAFT_ASSET_STORE_NAME, 'readwrite')
+      const store = tx.objectStore(DRAFT_ASSET_STORE_NAME)
+      const payload: DraftAssetRecord = {
+        draftId,
+        mediaFiles,
+        audioFile: draftAudioFile,
+        updatedAt: new Date().toISOString()
+      }
+      store.put(payload)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error || new Error('保存草稿附件失敗'))
+      tx.onabort = () => reject(tx.error || new Error('保存草稿附件被中止'))
+    })
+    db.close()
+  }
+
+  const getDraftAssets = async (draftId: string): Promise<DraftAssetRecord | null> => {
+    const db = await openDraftAssetDb()
+    const result = await new Promise<DraftAssetRecord | null>((resolve, reject) => {
+      const tx = db.transaction(DRAFT_ASSET_STORE_NAME, 'readonly')
+      const store = tx.objectStore(DRAFT_ASSET_STORE_NAME)
+      const request = store.get(draftId)
+      request.onsuccess = () => resolve((request.result as DraftAssetRecord | undefined) || null)
+      request.onerror = () => reject(request.error || new Error('讀取草稿附件失敗'))
+    })
+    db.close()
+    return result
   }
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,31 +358,57 @@ export default function SendLetter({
       return
     }
 
-    const payload = externalDraftToLoad.payload
-    setFormData({
-      senderName: payload.formData.senderName || '',
-      recipientName: payload.formData.recipientName || '',
-      letterContent: payload.formData.letterContent || ''
-    })
-    setDelayUnit(payload.delayUnit)
-    setDelayValue(payload.delayValue)
-    setStampDataUrl(payload.stampDataUrl || null)
-    setStampTemplate(payload.stampTemplate)
-    setPaperTheme(payload.paperTheme)
-    setAmbienceMusic(payload.ambienceMusic === true)
-    setEditingDraftId(externalDraftToLoad.id)
-    setError(null)
+    const restoreDraft = async () => {
+      const payload = externalDraftToLoad.payload
+      setFormData({
+        senderName: payload.formData.senderName || '',
+        recipientName: payload.formData.recipientName || '',
+        letterContent: payload.formData.letterContent || ''
+      })
+      setDelayUnit(payload.delayUnit)
+      setDelayValue(payload.delayValue)
+      setStampDataUrl(payload.stampDataUrl || null)
+      setStampTemplate(payload.stampTemplate)
+      setPaperTheme(payload.paperTheme)
+      setAmbienceMusic(payload.ambienceMusic === true)
+      setEditingDraftId(externalDraftToLoad.id)
+      setError(null)
 
-    mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
-    setMediaPreviews([])
-    setAudioFile(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    if (audioInputRef.current) audioInputRef.current.value = ''
+      mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
+      setMediaPreviews([])
+      setAudioFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      if (audioInputRef.current) audioInputRef.current.value = ''
 
-    onExternalDraftLoaded()
+      try {
+        const assetRecord = await getDraftAssets(externalDraftToLoad.id)
+        if (assetRecord) {
+          const restoredMedia = (assetRecord.mediaFiles || []).map((storedFile) => {
+            const file = storedFile
+            return {
+              url: URL.createObjectURL(file),
+              type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
+              name: file.name,
+              file
+            }
+          })
+          setMediaPreviews(restoredMedia)
+
+          if (assetRecord.audioFile) {
+            setAudioFile(assetRecord.audioFile)
+          }
+        }
+      } catch (assetError) {
+        console.error('Restore draft assets failed:', assetError)
+      }
+
+      onExternalDraftLoaded()
+    }
+
+    restoreDraft()
   }, [externalDraftToLoad, mediaPreviews, onExternalDraftLoaded])
 
-  const handleSaveToDraftBox = () => {
+  const handleSaveToDraftBox = async () => {
     const titleInput = window.prompt('草稿名稱（留空則自動命名）', `${formData.senderName || '未命名'}→${formData.recipientName || '未命名'}`)
     if (titleInput === null) {
       return
@@ -359,10 +443,20 @@ export default function SendLetter({
       }
     }
 
-    onSaveDraft(draftRecord)
-    setEditingDraftId(draftRecord.id)
-    setError(null)
-    window.alert('草稿已保存到草稿箱')
+    try {
+      await saveDraftAssets(
+        draftRecord.id,
+        mediaPreviews.map((item) => item.file),
+        audioFile
+      )
+      onSaveDraft(draftRecord)
+      setEditingDraftId(draftRecord.id)
+      setError(null)
+      window.alert('草稿已保存到草稿箱（含附件）')
+    } catch (saveError) {
+      console.error('Save draft assets failed:', saveError)
+      setError('草稿已保存文字，但附件保存失敗，請稍後再試')
+    }
   }
 
   const initializeStampCanvas = (

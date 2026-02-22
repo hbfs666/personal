@@ -320,10 +320,8 @@ app.get('/api/letters', async (req, res) => {
       return res.json(data.map(mapDbLetter))
     }
 
-    console.error('Cloud read failed in GET /api/letters, fallback to local:', error)
-
-    const fallbackLetters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
-    return res.json(fallbackLetters)
+    console.error('Cloud read failed in GET /api/letters:', error)
+    return res.status(503).json({ message: '雲端資料庫讀取失敗，請稍後再試' })
   }
 
   const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
@@ -338,15 +336,18 @@ app.get('/api/letters/:id', async (req, res) => {
       .from('letters')
       .select('*')
       .eq('id', req.params.id)
-      .single()
+      .maybeSingle()
 
-    if (!error && data) {
-      letter = mapDbLetter(data)
-    } else {
-      console.error('Cloud read failed in GET /api/letters/:id, fallback to local:', error)
-      const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
-      letter = letters.find(l => l.id === req.params.id)
+    if (error) {
+      console.error('Cloud read failed in GET /api/letters/:id:', error)
+      return res.status(503).json({ message: '雲端資料庫讀取失敗，請稍後再試' })
     }
+
+    if (!data) {
+      return res.status(404).json({ error: 'Letter not found' })
+    }
+
+    letter = mapDbLetter(data)
   } else {
     const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
     letter = letters.find(l => l.id === req.params.id)
@@ -548,28 +549,10 @@ app.post('/api/letters', (req, res) => {
             createdAt
           })
         } catch (cloudError) {
-          console.error('Cloud persistence failed, fallback to local:', cloudError)
-          const localLetter = persistLocalLetter({
-            id,
-            senderName: safeSenderName,
-            recipientName: safeRecipientName,
-            senderCountry,
-            recipientEmail,
-            letterContent: safeLetterContent,
-            safeDelayMinutes,
-            imageFiles,
-            videoFiles,
-            audioFile,
-            stampData,
-            paperTheme,
-            ambienceMusic: safeAmbienceMusic,
-            stickers: safeStickers,
-            holidayTheme: safeHolidayTheme,
-            scheduleTime,
-            createdAt,
-            filesAreInMemory: true
+          console.error('Cloud persistence failed in POST /api/letters:', cloudError)
+          return res.status(503).json({
+            message: '雲端儲存失敗，信件未建立。請稍後再試。'
           })
-          return res.json(localLetter)
         }
       }
 

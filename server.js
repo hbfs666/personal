@@ -240,6 +240,40 @@ const uploadToCloudinary = async (file, folder, resourceType) => {
   return result.secure_url
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const uploadWithRetry = async (file, folder, resourceType, label, maxRetries = 2) => {
+  let lastError = null
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await uploadToCloudinary(file, folder, resourceType)
+    } catch (error) {
+      lastError = error
+      const canRetry = attempt < maxRetries
+      if (!canRetry) {
+        break
+      }
+      const backoff = 600 * (attempt + 1)
+      console.warn(`Cloud upload retry ${attempt + 1}/${maxRetries} for ${label}`)
+      await wait(backoff)
+    }
+  }
+
+  throw new Error(`${label} 上傳失敗: ${lastError?.message || 'unknown error'}`)
+}
+
+const uploadFilesSequentially = async (files, folder, resourceType, labelPrefix) => {
+  const urls = []
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]
+    const label = `${labelPrefix}${index + 1}（${file.originalname || 'unnamed'}）`
+    const url = await uploadWithRetry(file, folder, resourceType, label)
+    urls.push(url)
+  }
+  return urls
+}
+
 const writeBufferFileToLocal = (file) => {
   const ext = path.extname(file.originalname || '') || ''
   const safeExt = ext.slice(0, 10)
@@ -490,17 +524,28 @@ app.post('/api/letters', (req, res) => {
 
       if (useCloudPersistence) {
         try {
-          const imageUrls = await Promise.all(
-            imageFiles.map(file => uploadToCloudinary(file, 'letters/images', 'image'))
+          const imageUrls = await uploadFilesSequentially(
+            imageFiles,
+            'letters/images',
+            'image',
+            '圖片'
           )
 
-          const videoUrls = await Promise.all(
-            videoFiles.map(file => uploadToCloudinary(file, 'letters/videos', 'video'))
+          const videoUrls = await uploadFilesSequentially(
+            videoFiles,
+            'letters/videos',
+            'video',
+            '影片'
           )
 
           let audioUrl = null
           if (audioFile) {
-            audioUrl = await uploadToCloudinary(audioFile, 'letters/audio', 'video')
+            audioUrl = await uploadWithRetry(
+              audioFile,
+              'letters/audio',
+              'video',
+              `音訊（${audioFile.originalname || 'unnamed'}）`
+            )
           }
 
           const insertPayload = {
@@ -551,7 +596,7 @@ app.post('/api/letters', (req, res) => {
         } catch (cloudError) {
           console.error('Cloud persistence failed in POST /api/letters:', cloudError)
           return res.status(503).json({
-            message: '雲端儲存失敗，信件未建立。請稍後再試。'
+            message: `雲端儲存失敗，信件未建立。${cloudError?.message || '請稍後再試。'}`
           })
         }
       }

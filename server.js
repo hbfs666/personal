@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { v2 as cloudinary } from 'cloudinary'
 
@@ -210,6 +211,72 @@ const getDelayMinutes = (letter) => {
   return (letter.delayDays || 0) * 24 * 60
 }
 
+const MAX_DELAY_MINUTES = 30 * 24 * 60
+
+const parseClampedInt = (value, fallback = 0) => {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+const clampDelayParts = ({ days = 0, hours = 0, minutes = 0 }) => {
+  const safeDays = Math.max(0, Math.min(parseClampedInt(days, 0), 30))
+  const safeHours = Math.max(0, Math.min(parseClampedInt(hours, 0), 23))
+  const safeMinutes = Math.max(0, Math.min(parseClampedInt(minutes, 0), 59))
+  return { safeDays, safeHours, safeMinutes }
+}
+
+const getTotalDelayMinutesFromParts = ({ days = 0, hours = 0, minutes = 0 }) => {
+  const { safeDays, safeHours, safeMinutes } = clampDelayParts({ days, hours, minutes })
+  const total = safeDays * 24 * 60 + safeHours * 60 + safeMinutes
+  return Math.max(0, Math.min(total, MAX_DELAY_MINUTES))
+}
+
+const deriveDelayMinutesFromBody = (body) => {
+  const parsedDelayMinutes = parseClampedInt(body.delayMinutes, Number.NaN)
+  if (Number.isFinite(parsedDelayMinutes)) {
+    return Math.max(0, Math.min(parsedDelayMinutes, MAX_DELAY_MINUTES))
+  }
+
+  const hasCompositeParts = body.delayDays !== undefined || body.delayHours !== undefined || body.delayMinutesPart !== undefined
+  if (hasCompositeParts) {
+    return getTotalDelayMinutesFromParts({
+      days: body.delayDays,
+      hours: body.delayHours,
+      minutes: body.delayMinutesPart
+    })
+  }
+
+  const fallbackDelayMinutes = parseClampedInt(body.delayDays, 0) * 24 * 60
+  return Math.max(0, Math.min(fallbackDelayMinutes, MAX_DELAY_MINUTES))
+}
+
+const hashPassword = (plainText) => {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const hash = crypto.scryptSync(plainText, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+const verifyPassword = (plainText, storedHash) => {
+  if (typeof storedHash !== 'string' || !storedHash.includes(':')) {
+    return false
+  }
+
+  const [salt, originalHashHex] = storedHash.split(':')
+  if (!salt || !originalHashHex) {
+    return false
+  }
+
+  const derivedHashHex = crypto.scryptSync(plainText, salt, 64).toString('hex')
+  const originalBuffer = Buffer.from(originalHashHex, 'hex')
+  const derivedBuffer = Buffer.from(derivedHashHex, 'hex')
+
+  if (originalBuffer.length !== derivedBuffer.length) {
+    return false
+  }
+
+  return crypto.timingSafeEqual(originalBuffer, derivedBuffer)
+}
+
 const mapDbLetter = (row) => ({
   id: row.id,
   senderName: row.sender_name,
@@ -322,6 +389,7 @@ const persistLocalLetter = ({
   stampData,
   paperTheme,
   ambienceMusic,
+  editPasswordHash,
   stickers,
   holidayTheme,
   scheduleTime,
@@ -357,6 +425,7 @@ const persistLocalLetter = ({
     stampData: stampData || null,
     paperTheme: paperTheme || 'classic',
     ambienceMusic: ambienceMusic === true,
+    editPasswordHash: editPasswordHash || null,
     stickers: Array.isArray(stickers) ? stickers : [],
     holidayTheme: holidayTheme || 'none',
     scheduleTime,
@@ -384,7 +453,8 @@ app.get('/api/letters', async (req, res) => {
   }
 
   const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
-  res.json(letters)
+  const sanitized = letters.map(({ editPasswordHash, ...rest }) => rest)
+  res.json(sanitized)
 })
 
 app.get('/api/letters/:id', async (req, res) => {
@@ -421,11 +491,119 @@ app.get('/api/letters/:id', async (req, res) => {
   const revealTime = new Date(letter.scheduleTime).getTime() + (delayMinutes * 60 * 1000)
   const isRevealed = now >= revealTime
 
+  const { editPasswordHash, ...safeLetter } = letter
+
   res.json({
-    ...letter,
+    ...safeLetter,
     delayMinutes,
     isRevealed,
     timeLeft: Math.max(0, revealTime - now)
+  })
+})
+
+app.put('/api/letters/:id/edit', async (req, res) => {
+  const { password, letterContent, delayDays, delayHours, delayMinutesPart } = req.body || {}
+  const safePassword = typeof password === 'string' ? password.trim() : ''
+  const safeLetterContent = typeof letterContent === 'string' ? letterContent : ''
+  const safeDelayMinutes = getTotalDelayMinutesFromParts({
+    days: delayDays,
+    hours: delayHours,
+    minutes: delayMinutesPart
+  })
+
+  if (!safePassword) {
+    return res.status(400).json({ message: '缺少修改密碼' })
+  }
+
+  let currentLetter = null
+
+  if (useCloudPersistence) {
+    const { data, error } = await supabase
+      .from('letters')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle()
+
+    if (error) {
+      console.error('Cloud read failed in PUT /api/letters/:id/edit:', error)
+      return res.status(503).json({ message: '雲端資料庫讀取失敗，請稍後再試' })
+    }
+
+    if (!data) {
+      return res.status(404).json({ message: '信件不存在' })
+    }
+
+    currentLetter = data
+  } else {
+    const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+    currentLetter = letters.find((item) => item.id === req.params.id)
+  }
+
+  if (!currentLetter) {
+    return res.status(404).json({ message: '信件不存在' })
+  }
+
+  const existingDelayMinutes = Number.isFinite(currentLetter.delay_minutes)
+    ? currentLetter.delay_minutes
+    : (Number.isFinite(currentLetter.delayMinutes) ? currentLetter.delayMinutes : 0)
+  const revealTime = new Date(currentLetter.schedule_time || currentLetter.scheduleTime).getTime() + (existingDelayMinutes * 60 * 1000)
+  if (Date.now() >= revealTime) {
+    return res.status(400).json({ message: '信件已解鎖，無法再修改' })
+  }
+
+  const storedHash = currentLetter.edit_password_hash || currentLetter.editPasswordHash
+  if (!storedHash) {
+    return res.status(400).json({ message: '此信件未設定寄送中修改密碼' })
+  }
+
+  const passwordValid = verifyPassword(safePassword, storedHash)
+  if (!passwordValid) {
+    return res.status(401).json({ message: '修改密碼錯誤' })
+  }
+
+  if (useCloudPersistence) {
+    const { error } = await supabase
+      .from('letters')
+      .update({
+        letter_content: safeLetterContent,
+        delay_minutes: safeDelayMinutes
+      })
+      .eq('id', req.params.id)
+
+    if (error) {
+      console.error('Cloud update failed in PUT /api/letters/:id/edit:', error)
+      return res.status(503).json({ message: `雲端更新失敗：${error.message || '請稍後再試'}` })
+    }
+
+    return res.json({
+      id: req.params.id,
+      delayMinutes: safeDelayMinutes,
+      delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
+      letterContent: safeLetterContent,
+      message: '寄送中修改成功'
+    })
+  }
+
+  const letters = JSON.parse(fs.readFileSync(lettersFile, 'utf8'))
+  const index = letters.findIndex((item) => item.id === req.params.id)
+  if (index < 0) {
+    return res.status(404).json({ message: '信件不存在' })
+  }
+
+  letters[index] = {
+    ...letters[index],
+    letterContent: safeLetterContent,
+    delayMinutes: safeDelayMinutes,
+    delayDays: Math.floor(safeDelayMinutes / (24 * 60))
+  }
+  fs.writeFileSync(lettersFile, JSON.stringify(letters, null, 2))
+
+  return res.json({
+    id: req.params.id,
+    delayMinutes: safeDelayMinutes,
+    delayDays: Math.floor(safeDelayMinutes / (24 * 60)),
+    letterContent: safeLetterContent,
+    message: '寄送中修改成功'
   })
 })
 
@@ -512,19 +690,17 @@ app.post('/api/letters', (req, res) => {
         stampData,
         paperTheme,
         ambienceMusic,
+        editPassword,
         stickers,
         holidayTheme
       } = req.body
 
-      const parsedDelayMinutes = Number.parseInt(delayMinutes, 10)
-      const fallbackDelayMinutes = Number.parseInt(delayDays, 10) * 24 * 60
-      const normalizedDelayMinutes = Number.isFinite(parsedDelayMinutes)
-        ? parsedDelayMinutes
-        : (Number.isFinite(fallbackDelayMinutes) ? fallbackDelayMinutes : 0)
-      const safeDelayMinutes = Math.max(0, Math.min(normalizedDelayMinutes, 30 * 24 * 60))
+      const safeDelayMinutes = deriveDelayMinutesFromBody(req.body)
       const safeLetterContent = typeof letterContent === 'string' ? letterContent : ''
       const safeSenderName = typeof senderName === 'string' ? senderName.trim() : ''
       const safeRecipientName = typeof recipientName === 'string' ? recipientName.trim() : ''
+      const safeEditPassword = typeof editPassword === 'string' ? editPassword.trim() : ''
+      const safeEditPasswordHash = safeEditPassword.length >= 4 ? hashPassword(safeEditPassword) : null
       const safeAmbienceMusic = ambienceMusic === 'true'
       const safeHolidayTheme = ['none', 'christmas', 'birthday', 'newyear'].includes(holidayTheme) ? holidayTheme : 'none'
 
@@ -540,6 +716,10 @@ app.post('/api/letters', (req, res) => {
 
       if (!safeSenderName || !safeRecipientName) {
         return res.status(400).json({ message: '缺少必填欄位' })
+      }
+
+      if (safeDelayMinutes > 0 && !safeEditPasswordHash) {
+        return res.status(400).json({ message: '請設定寄送中修改密碼（至少 4 個字）' })
       }
 
       const id = uuidv4()
@@ -587,6 +767,7 @@ app.post('/api/letters', (req, res) => {
             stamp_data: stampData || null,
             paper_theme: paperTheme || 'classic',
             ambience_music: safeAmbienceMusic,
+            edit_password_hash: safeEditPasswordHash,
             stickers: safeStickers,
             holiday_theme: safeHolidayTheme,
             schedule_time: scheduleTime,
@@ -637,6 +818,7 @@ app.post('/api/letters', (req, res) => {
         stampData,
         paperTheme,
         ambienceMusic: safeAmbienceMusic,
+        editPasswordHash: safeEditPasswordHash,
         stickers: safeStickers,
         holidayTheme: safeHolidayTheme,
         scheduleTime,

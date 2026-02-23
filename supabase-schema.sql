@@ -13,6 +13,7 @@ create table if not exists public.letters (
   audio_url text,
   stamp_data text,
   paper_theme text not null default 'classic',
+  edit_password_hash text,
   opening_animation text not null default 'unfold',
   ambience_music boolean not null default false,
   handwriting_mode boolean not null default false,
@@ -29,6 +30,9 @@ alter table if exists public.letters
 
 alter table if exists public.letters
   add column if not exists paper_theme text not null default 'classic';
+
+alter table if exists public.letters
+  add column if not exists edit_password_hash text;
 
 alter table if exists public.letters
   add column if not exists sender_country text;

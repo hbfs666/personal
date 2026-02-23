@@ -55,6 +55,15 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const [shared, setShared] = useState(false)
   const [musicOn, setMusicOn] = useState(false)
   const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editPassword, setEditPassword] = useState('')
+  const [editLetterContent, setEditLetterContent] = useState('')
+  const [editDelayDays, setEditDelayDays] = useState(0)
+  const [editDelayHours, setEditDelayHours] = useState(0)
+  const [editDelayMinutesPart, setEditDelayMinutesPart] = useState(0)
+  const [editSubmitting, setEditSubmitting] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editSuccess, setEditSuccess] = useState<string | null>(null)
   const [confettiPieces, setConfettiPieces] = useState<Array<{
     id: number
     left: string
@@ -80,13 +89,31 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
 
   const getDelayDisplayText = (totalDelayMinutes: number) => {
     if (totalDelayMinutes <= 0) return '立即'
-    if (totalDelayMinutes % (24 * 60) === 0) {
-      return `${totalDelayMinutes / (24 * 60)} 天`
+
+    const days = Math.floor(totalDelayMinutes / (24 * 60))
+    const hours = Math.floor((totalDelayMinutes % (24 * 60)) / 60)
+    const minutes = totalDelayMinutes % 60
+    const parts: string[] = []
+    if (days > 0) parts.push(`${days} 天`)
+    if (hours > 0) parts.push(`${hours} 小時`)
+    if (minutes > 0) parts.push(`${minutes} 分鐘`)
+    return parts.join(' ')
+  }
+
+  const splitDelayMinutes = (totalDelayMinutes: number) => {
+    const safeTotal = Math.max(0, Math.min(totalDelayMinutes, 30 * 24 * 60))
+    return {
+      days: Math.floor(safeTotal / (24 * 60)),
+      hours: Math.floor((safeTotal % (24 * 60)) / 60),
+      minutes: safeTotal % 60
     }
-    if (totalDelayMinutes % 60 === 0) {
-      return `${totalDelayMinutes / 60} 小時`
-    }
-    return `${totalDelayMinutes} 分鐘`
+  }
+
+  const getEditDelayTotalMinutes = () => {
+    const safeDays = Math.max(0, Math.min(30, Number.isFinite(editDelayDays) ? editDelayDays : 0))
+    const safeHours = Math.max(0, Math.min(23, Number.isFinite(editDelayHours) ? editDelayHours : 0))
+    const safeMinutes = Math.max(0, Math.min(59, Number.isFinite(editDelayMinutesPart) ? editDelayMinutesPart : 0))
+    return Math.max(0, Math.min(safeDays * 24 * 60 + safeHours * 60 + safeMinutes, 30 * 24 * 60))
   }
 
   const handleDownloadImage = async (imageUrl: string, index: number) => {
@@ -227,6 +254,16 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   }, [letter])
 
   useEffect(() => {
+    if (!letter) return
+    setEditLetterContent(letter.letterContent || '')
+    const total = getTotalDelayMinutes(letter)
+    const parts = splitDelayMinutes(total)
+    setEditDelayDays(parts.days)
+    setEditDelayHours(parts.hours)
+    setEditDelayMinutesPart(parts.minutes)
+  }, [letter?.id, letter?.letterContent, letter?.delayMinutes, letter?.delayDays])
+
+  useEffect(() => {
     if (letter?.ambienceMusic === true) {
       setMusicOn(true)
     } else {
@@ -351,6 +388,77 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const selectedPaperTheme = letter.paperTheme || 'classic'
   const paperThemeClassName = paperThemeClassMap[selectedPaperTheme] || paperThemeClassMap.classic
 
+  const handleOpenEditModal = () => {
+    const currentDelayParts = splitDelayMinutes(totalDelayMinutes)
+    setEditLetterContent(letter.letterContent || '')
+    setEditDelayDays(currentDelayParts.days)
+    setEditDelayHours(currentDelayParts.hours)
+    setEditDelayMinutesPart(currentDelayParts.minutes)
+    setEditPassword('')
+    setEditError(null)
+    setEditSuccess(null)
+    setIsEditModalOpen(true)
+  }
+
+  const handleSubmitPendingEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEditError(null)
+    setEditSuccess(null)
+
+    if (editPassword.trim().length < 1) {
+      setEditError('請輸入修改密碼')
+      return
+    }
+
+    setEditSubmitting(true)
+    try {
+      const response = await fetch(apiUrl(`/api/letters/${letterId}/edit`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          password: editPassword,
+          letterContent: editLetterContent,
+          delayDays: editDelayDays,
+          delayHours: editDelayHours,
+          delayMinutesPart: editDelayMinutesPart
+        })
+      })
+
+      const responseText = await response.text()
+      let payload: any = null
+      try {
+        payload = responseText ? JSON.parse(responseText) : null
+      } catch {
+        payload = null
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message || `修改失敗 (${response.status})`)
+      }
+
+      const nextDelayMinutes = getEditDelayTotalMinutes()
+      setLetter((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          letterContent: editLetterContent,
+          delayMinutes: nextDelayMinutes,
+          delayDays: Math.floor(nextDelayMinutes / (24 * 60))
+        }
+      })
+      setEditSuccess(payload?.message || '修改成功')
+      setTimeout(() => {
+        setIsEditModalOpen(false)
+      }, 700)
+    } catch (submitError) {
+      setEditError(submitError instanceof Error ? submitError.message : '寄送中修改失敗')
+    } finally {
+      setEditSubmitting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-transparent py-12 px-4">
       <div className="max-w-2xl mx-auto">
@@ -454,6 +562,13 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                 <p className="text-xs text-gray-500 mt-2">
                   這封信設定為 {delayDisplayText} 後解鎖，請耐心等待~~~
                 </p>
+                <button
+                  type="button"
+                  onClick={handleOpenEditModal}
+                  className="mt-3 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                >
+                  ✏️ 寄送中修改（需密碼）
+                </button>
               </div>
             )}
           </div>
@@ -673,6 +788,110 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
             <p className="mt-2 text-center text-white text-sm">
               {previewImageIndex + 1} / {letter.imageUrls.length}
             </p>
+          </div>
+        </div>
+      )}
+
+      {isEditModalOpen && !letter.isRevealed && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setIsEditModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-indigo-900 mb-4">寄送中修改（需密碼）</h3>
+            {editError && (
+              <p className="mb-3 px-3 py-2 rounded-lg bg-red-100 text-red-700 text-sm">{editError}</p>
+            )}
+            {editSuccess && (
+              <p className="mb-3 px-3 py-2 rounded-lg bg-green-100 text-green-700 text-sm">{editSuccess}</p>
+            )}
+            <form onSubmit={handleSubmitPendingEdit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">修改密碼</label>
+                <input
+                  type="password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
+                  placeholder="輸入寄信時設定的密碼"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">信件內容</label>
+                <textarea
+                  value={editLetterContent}
+                  onChange={(e) => setEditLetterContent(e.target.value)}
+                  rows={6}
+                  className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">天（0-30）</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={editDelayDays}
+                    onChange={(e) => {
+                      const value = Number.parseInt(e.target.value || '0', 10)
+                      setEditDelayDays(Math.max(0, Math.min(30, Number.isFinite(value) ? value : 0)))
+                    }}
+                    className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">小時（0-23）</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={editDelayHours}
+                    onChange={(e) => {
+                      const value = Number.parseInt(e.target.value || '0', 10)
+                      setEditDelayHours(Math.max(0, Math.min(23, Number.isFinite(value) ? value : 0)))
+                    }}
+                    className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">分鐘（0-59）</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={editDelayMinutesPart}
+                    onChange={(e) => {
+                      const value = Number.parseInt(e.target.value || '0', 10)
+                      setEditDelayMinutesPart(Math.max(0, Math.min(59, Number.isFinite(value) ? value : 0)))
+                    }}
+                    className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400 text-gray-800"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold disabled:bg-gray-400"
+                >
+                  {editSubmitting ? '儲存中...' : '儲存修改'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

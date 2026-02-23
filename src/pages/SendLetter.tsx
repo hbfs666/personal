@@ -66,8 +66,10 @@ export default function SendLetter({
     recipientName: '',
     letterContent: ''
   })
-  const [delayUnit, setDelayUnit] = useState<'immediate' | 'day' | 'hour' | 'minute'>('day')
-  const [delayValue, setDelayValue] = useState(5)
+  const [delayDays, setDelayDays] = useState(5)
+  const [delayHours, setDelayHours] = useState(0)
+  const [delayMinutesPart, setDelayMinutesPart] = useState(0)
+  const [editPassword, setEditPassword] = useState('')
 
   const [mediaPreviews, setMediaPreviews] = useState<MediaPreviewItem[]>([])
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -103,17 +105,24 @@ export default function SendLetter({
   }
 
   const getDelayMinutes = () => {
-    if (delayUnit === 'immediate') return 0
-    if (delayUnit === 'day') return delayValue * 24 * 60
-    if (delayUnit === 'hour') return delayValue * 60
-    return delayValue
+    const safeDays = Math.max(0, Math.min(30, Number.isFinite(delayDays) ? delayDays : 0))
+    const safeHours = Math.max(0, Math.min(23, Number.isFinite(delayHours) ? delayHours : 0))
+    const safeMinutes = Math.max(0, Math.min(59, Number.isFinite(delayMinutesPart) ? delayMinutesPart : 0))
+    return Math.max(0, Math.min(safeDays * 24 * 60 + safeHours * 60 + safeMinutes, 30 * 24 * 60))
   }
 
   const getDelayLabel = () => {
-    if (delayUnit === 'immediate') return '立即可以看到'
-    if (delayUnit === 'day') return `${delayValue} 天後解鎖`
-    if (delayUnit === 'hour') return `${delayValue} 小時後解鎖`
-    return `${delayValue} 分鐘後解鎖`
+    const total = getDelayMinutes()
+    if (total === 0) return '立即可以看到'
+
+    const days = Math.floor(total / (24 * 60))
+    const hours = Math.floor((total % (24 * 60)) / 60)
+    const minutes = total % 60
+    const parts: string[] = []
+    if (days > 0) parts.push(`${days} 天`)
+    if (hours > 0) parts.push(`${hours} 小時`)
+    if (minutes > 0) parts.push(`${minutes} 分鐘`)
+    return `${parts.join(' ')}後解鎖`
   }
 
   const openDraftAssetDb = () => new Promise<IDBDatabase>((resolve, reject) => {
@@ -305,11 +314,42 @@ export default function SendLetter({
           letterContent: draft.formData.letterContent || ''
         })
       }
-      if (['immediate', 'day', 'hour', 'minute'].includes(draft.delayUnit)) {
-        setDelayUnit(draft.delayUnit)
+      if (Number.isFinite(draft.delayDays)) {
+        setDelayDays(Math.max(0, Math.min(30, draft.delayDays)))
       }
-      if (Number.isFinite(draft.delayValue)) {
-        setDelayValue(draft.delayValue)
+      if (Number.isFinite(draft.delayHours)) {
+        setDelayHours(Math.max(0, Math.min(23, draft.delayHours)))
+      }
+      if (Number.isFinite(draft.delayMinutesPart)) {
+        setDelayMinutesPart(Math.max(0, Math.min(59, draft.delayMinutesPart)))
+      }
+      if (typeof draft.editPassword === 'string') {
+        setEditPassword(draft.editPassword)
+      }
+
+      if (!Number.isFinite(draft.delayDays) && Number.isFinite(draft.delayValue)) {
+        const legacyDelayValue = Math.max(0, Number.parseInt(String(draft.delayValue), 10) || 0)
+        const legacyDelayUnit = ['immediate', 'day', 'hour', 'minute'].includes(draft.delayUnit) ? draft.delayUnit : 'day'
+        if (legacyDelayUnit === 'immediate') {
+          setDelayDays(0)
+          setDelayHours(0)
+          setDelayMinutesPart(0)
+        }
+        if (legacyDelayUnit === 'day') {
+          setDelayDays(Math.max(0, Math.min(30, legacyDelayValue)))
+          setDelayHours(0)
+          setDelayMinutesPart(0)
+        }
+        if (legacyDelayUnit === 'hour') {
+          setDelayDays(0)
+          setDelayHours(Math.max(0, Math.min(23, legacyDelayValue)))
+          setDelayMinutesPart(0)
+        }
+        if (legacyDelayUnit === 'minute') {
+          setDelayDays(0)
+          setDelayHours(0)
+          setDelayMinutesPart(Math.max(0, Math.min(59, legacyDelayValue)))
+        }
       }
       if (typeof draft.stampDataUrl === 'string') {
         setStampDataUrl(draft.stampDataUrl)
@@ -333,8 +373,10 @@ export default function SendLetter({
 
     const draftPayload = {
       formData,
-      delayUnit,
-      delayValue,
+      delayDays,
+      delayHours,
+      delayMinutesPart,
+      editPassword,
       stampDataUrl,
       stampTemplate,
       paperTheme,
@@ -344,8 +386,10 @@ export default function SendLetter({
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload))
   }, [
     formData,
-    delayUnit,
-    delayValue,
+    delayDays,
+    delayHours,
+    delayMinutesPart,
+    editPassword,
     stampDataUrl,
     stampTemplate,
     paperTheme,
@@ -365,8 +409,10 @@ export default function SendLetter({
         recipientName: payload.formData.recipientName || '',
         letterContent: payload.formData.letterContent || ''
       })
-      setDelayUnit(payload.delayUnit)
-      setDelayValue(payload.delayValue)
+      setDelayDays(Math.max(0, Math.min(30, payload.delayDays || 0)))
+      setDelayHours(Math.max(0, Math.min(23, payload.delayHours || 0)))
+      setDelayMinutesPart(Math.max(0, Math.min(59, payload.delayMinutesPart || 0)))
+      setEditPassword(payload.editPassword || '')
       setStampDataUrl(payload.stampDataUrl || null)
       setStampTemplate(payload.stampTemplate)
       setPaperTheme(payload.paperTheme)
@@ -434,8 +480,10 @@ export default function SendLetter({
       updatedAt: now,
       payload: {
         formData,
-        delayUnit,
-        delayValue,
+        delayDays,
+        delayHours,
+        delayMinutesPart,
+        editPassword,
         stampDataUrl,
         stampTemplate,
         paperTheme,
@@ -597,8 +645,10 @@ export default function SendLetter({
       recipientName: '',
       letterContent: ''
     })
-    setDelayUnit('day')
-    setDelayValue(5)
+    setDelayDays(5)
+    setDelayHours(0)
+    setDelayMinutesPart(0)
+    setEditPassword('')
     setPaperTheme('classic')
     setAmbienceMusic(false)
     mediaPreviews.forEach((item) => URL.revokeObjectURL(item.url))
@@ -633,7 +683,7 @@ export default function SendLetter({
       if (navigator.share) {
         await navigator.share({
           title: `${formData.senderName} 寄來的一封信`,
-          text: `${formData.recipientName}，這封信${delayUnit === 'immediate' ? '已可查看' : `將在 ${getDelayLabel()}。`}`,
+          text: `${formData.recipientName}，這封信${getDelayMinutes() === 0 ? '已可查看' : `將在 ${getDelayLabel()}。`}`,
           url: shareLink
         })
         setShared(true)
@@ -660,12 +710,22 @@ export default function SendLetter({
       return
     }
 
+    if (getDelayMinutes() > 0 && editPassword.trim().length < 4) {
+      setError('寄送中修改密碼至少需要 4 個字')
+      setIsLoading(false)
+      return
+    }
+
     try {
       const formDataToSend = new FormData()
       formDataToSend.append('senderName', formData.senderName)
       formDataToSend.append('recipientName', formData.recipientName)
       formDataToSend.append('letterContent', formData.letterContent)
       formDataToSend.append('delayMinutes', getDelayMinutes().toString())
+      formDataToSend.append('delayDays', delayDays.toString())
+      formDataToSend.append('delayHours', delayHours.toString())
+      formDataToSend.append('delayMinutesPart', delayMinutesPart.toString())
+      formDataToSend.append('editPassword', editPassword)
       formDataToSend.append('paperTheme', paperTheme)
       formDataToSend.append('ambienceMusic', ambienceMusic ? 'true' : 'false')
       
@@ -773,7 +833,7 @@ export default function SendLetter({
           <p className="font-semibold text-yellow-900">⏰ 延遲設定：</p>
           <p className="text-yellow-800">{getDelayLabel()}</p>
           <p className="text-sm text-yellow-700 mt-2">
-            {delayUnit === 'immediate' ? '信件馬上就能查看' : '在這之前，你的筆友看到的會是模糊的信件 😉'}
+            {getDelayMinutes() === 0 ? '信件馬上就能查看' : '在這之前，你的筆友看到的會是模糊的信件 😉'}
           </p>
         </div>
 
@@ -860,6 +920,22 @@ export default function SendLetter({
               className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 bg-indigo-50"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            🔐 寄送中修改密碼（解鎖前可改內容/時間）
+          </label>
+          <input
+            type="password"
+            value={editPassword}
+            onChange={(e) => setEditPassword(e.target.value)}
+            placeholder="至少 4 個字"
+            className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600 bg-indigo-50"
+          />
+          <p className="text-xs text-gray-600 mt-2">
+            若延遲時間大於 0，需設定此密碼才能在寄送中修改。
+          </p>
         </div>
 
         <div>
@@ -1137,44 +1213,49 @@ export default function SendLetter({
           <label className="block text-sm font-semibold text-gray-700 mb-2">
             ⏰ 多久後才能看到？
           </label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <select
-              value={delayUnit}
-              onChange={(e) => {
-                const unit = e.target.value as 'immediate' | 'day' | 'hour' | 'minute'
-                setDelayUnit(unit)
-                if (unit === 'immediate') setDelayValue(0)
-                if (unit === 'day' && delayValue < 1) setDelayValue(1)
-                if (unit === 'hour' && (delayValue < 1 || delayValue > 23)) setDelayValue(1)
-                if (unit === 'minute' && (delayValue < 1 || delayValue > 59)) setDelayValue(1)
-              }}
-              className="px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
-            >
-              <option value="immediate">立即</option>
-              <option value="day">天</option>
-              <option value="hour">小時（1-23）</option>
-              <option value="minute">分鐘（1-59）</option>
-            </select>
-
-            {delayUnit !== 'immediate' ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">天（0-30）</label>
               <input
                 type="number"
-                min={1}
-                max={delayUnit === 'day' ? 30 : delayUnit === 'hour' ? 23 : 59}
-                value={delayValue}
+                min={0}
+                max={30}
+                value={delayDays}
                 onChange={(e) => {
-                  const max = delayUnit === 'day' ? 30 : delayUnit === 'hour' ? 23 : 59
-                  const numericValue = Number.parseInt(e.target.value || '1', 10)
-                  const safeValue = Math.max(1, Math.min(Number.isFinite(numericValue) ? numericValue : 1, max))
-                  setDelayValue(safeValue)
+                  const value = Number.parseInt(e.target.value || '0', 10)
+                  setDelayDays(Math.max(0, Math.min(30, Number.isFinite(value) ? value : 0)))
                 }}
-                className="px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
+                className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
               />
-            ) : (
-              <div className="px-4 py-2 border-2 border-indigo-200 rounded-lg bg-indigo-50 text-indigo-700 font-semibold">
-                立即可查看
-              </div>
-            )}
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">小時（0-23）</label>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={delayHours}
+                onChange={(e) => {
+                  const value = Number.parseInt(e.target.value || '0', 10)
+                  setDelayHours(Math.max(0, Math.min(23, Number.isFinite(value) ? value : 0)))
+                }}
+                className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">分鐘（0-59）</label>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={delayMinutesPart}
+                onChange={(e) => {
+                  const value = Number.parseInt(e.target.value || '0', 10)
+                  setDelayMinutesPart(Math.max(0, Math.min(59, Number.isFinite(value) ? value : 0)))
+                }}
+                className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
+              />
+            </div>
           </div>
           <p className="text-lg font-bold text-indigo-900 mt-3">{getDelayLabel()}</p>
           <p className="text-xs text-gray-600 mt-2">

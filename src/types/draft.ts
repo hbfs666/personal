@@ -4,8 +4,10 @@ export interface DraftPayload {
     recipientName: string
     letterContent: string
   }
-  delayUnit: 'immediate' | 'day' | 'hour' | 'minute'
-  delayValue: number
+  delayDays: number
+  delayHours: number
+  delayMinutesPart: number
+  editPassword: string
   stampDataUrl: string | null
   stampTemplate: 'classic' | 'star' | 'heart' | 'wave'
   paperTheme: 'classic' | 'warm' | 'mint' | 'lavender'

@@ -58,9 +58,9 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editPassword, setEditPassword] = useState('')
   const [editLetterContent, setEditLetterContent] = useState('')
-  const [editDelayDays, setEditDelayDays] = useState(0)
-  const [editDelayHours, setEditDelayHours] = useState(0)
-  const [editDelayMinutesPart, setEditDelayMinutesPart] = useState(0)
+  const [editDelayDays, setEditDelayDays] = useState<number | ''>(0)
+  const [editDelayHours, setEditDelayHours] = useState<number | ''>(0)
+  const [editDelayMinutesPart, setEditDelayMinutesPart] = useState<number | ''>(0)
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [editSuccess, setEditSuccess] = useState<string | null>(null)
@@ -109,10 +109,22 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
     }
   }
 
+  const normalizeEditDelayPart = (value: number | '', max: number) => {
+    if (value === '' || !Number.isFinite(value)) {
+      return 0
+    }
+    return Math.max(0, Math.min(max, Math.trunc(value)))
+  }
+
+  const getSafeEditDelayParts = () => {
+    const safeDays = normalizeEditDelayPart(editDelayDays, 30)
+    const safeHours = normalizeEditDelayPart(editDelayHours, 23)
+    const safeMinutes = normalizeEditDelayPart(editDelayMinutesPart, 59)
+    return { safeDays, safeHours, safeMinutes }
+  }
+
   const getEditDelayTotalMinutes = () => {
-    const safeDays = Math.max(0, Math.min(30, Number.isFinite(editDelayDays) ? editDelayDays : 0))
-    const safeHours = Math.max(0, Math.min(23, Number.isFinite(editDelayHours) ? editDelayHours : 0))
-    const safeMinutes = Math.max(0, Math.min(59, Number.isFinite(editDelayMinutesPart) ? editDelayMinutesPart : 0))
+    const { safeDays, safeHours, safeMinutes } = getSafeEditDelayParts()
     return Math.max(0, Math.min(safeDays * 24 * 60 + safeHours * 60 + safeMinutes, 30 * 24 * 60))
   }
 
@@ -412,6 +424,8 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
 
     setEditSubmitting(true)
     try {
+      const { safeDays, safeHours, safeMinutes } = getSafeEditDelayParts()
+
       const response = await fetch(apiUrl(`/api/letters/${letterId}/edit`), {
         method: 'PUT',
         headers: {
@@ -420,9 +434,9 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
         body: JSON.stringify({
           password: editPassword,
           letterContent: editLetterContent,
-          delayDays: editDelayDays,
-          delayHours: editDelayHours,
-          delayMinutesPart: editDelayMinutesPart
+          delayDays: safeDays,
+          delayHours: safeHours,
+          delayMinutesPart: safeMinutes
         })
       })
 
@@ -839,8 +853,15 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                     max={30}
                     value={editDelayDays}
                     onChange={(e) => {
-                      const value = Number.parseInt(e.target.value || '0', 10)
-                      setEditDelayDays(Math.max(0, Math.min(30, Number.isFinite(value) ? value : 0)))
+                      const nextValue = e.target.value
+                      if (nextValue === '') {
+                        setEditDelayDays('')
+                        return
+                      }
+                      const parsed = Number.parseInt(nextValue, 10)
+                      if (Number.isFinite(parsed)) {
+                        setEditDelayDays(parsed)
+                      }
                     }}
                     className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
                   />
@@ -853,8 +874,15 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                     max={23}
                     value={editDelayHours}
                     onChange={(e) => {
-                      const value = Number.parseInt(e.target.value || '0', 10)
-                      setEditDelayHours(Math.max(0, Math.min(23, Number.isFinite(value) ? value : 0)))
+                      const nextValue = e.target.value
+                      if (nextValue === '') {
+                        setEditDelayHours('')
+                        return
+                      }
+                      const parsed = Number.parseInt(nextValue, 10)
+                      if (Number.isFinite(parsed)) {
+                        setEditDelayHours(parsed)
+                      }
                     }}
                     className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
                   />
@@ -867,8 +895,15 @@ export default function ViewLetter({ letterId, onBack }: ViewLetterProps) {
                     max={59}
                     value={editDelayMinutesPart}
                     onChange={(e) => {
-                      const value = Number.parseInt(e.target.value || '0', 10)
-                      setEditDelayMinutesPart(Math.max(0, Math.min(59, Number.isFinite(value) ? value : 0)))
+                      const nextValue = e.target.value
+                      if (nextValue === '') {
+                        setEditDelayMinutesPart('')
+                        return
+                      }
+                      const parsed = Number.parseInt(nextValue, 10)
+                      if (Number.isFinite(parsed)) {
+                        setEditDelayMinutesPart(parsed)
+                      }
                     }}
                     className="w-full px-3 py-2 border-2 border-indigo-300 rounded-lg focus:outline-none focus:border-indigo-600"
                   />

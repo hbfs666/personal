@@ -66,9 +66,9 @@ export default function SendLetter({
     recipientName: '',
     letterContent: ''
   })
-  const [delayDays, setDelayDays] = useState(5)
-  const [delayHours, setDelayHours] = useState(0)
-  const [delayMinutesPart, setDelayMinutesPart] = useState(0)
+  const [delayDays, setDelayDays] = useState<number | ''>(5)
+  const [delayHours, setDelayHours] = useState<number | ''>(0)
+  const [delayMinutesPart, setDelayMinutesPart] = useState<number | ''>(0)
   const [editPassword, setEditPassword] = useState('')
 
   const [mediaPreviews, setMediaPreviews] = useState<MediaPreviewItem[]>([])
@@ -104,10 +104,22 @@ export default function SendLetter({
     }))
   }
 
+  const normalizeDelayPart = (value: number | '', max: number) => {
+    if (value === '' || !Number.isFinite(value)) {
+      return 0
+    }
+    return Math.max(0, Math.min(max, Math.trunc(value)))
+  }
+
+  const getSafeDelayParts = () => {
+    const safeDays = normalizeDelayPart(delayDays, 30)
+    const safeHours = normalizeDelayPart(delayHours, 23)
+    const safeMinutes = normalizeDelayPart(delayMinutesPart, 59)
+    return { safeDays, safeHours, safeMinutes }
+  }
+
   const getDelayMinutes = () => {
-    const safeDays = Math.max(0, Math.min(30, Number.isFinite(delayDays) ? delayDays : 0))
-    const safeHours = Math.max(0, Math.min(23, Number.isFinite(delayHours) ? delayHours : 0))
-    const safeMinutes = Math.max(0, Math.min(59, Number.isFinite(delayMinutesPart) ? delayMinutesPart : 0))
+    const { safeDays, safeHours, safeMinutes } = getSafeDelayParts()
     return Math.max(0, Math.min(safeDays * 24 * 60 + safeHours * 60 + safeMinutes, 30 * 24 * 60))
   }
 
@@ -371,11 +383,12 @@ export default function SendLetter({
       return
     }
 
+    const { safeDays, safeHours, safeMinutes } = getSafeDelayParts()
     const draftPayload = {
       formData,
-      delayDays,
-      delayHours,
-      delayMinutesPart,
+      delayDays: safeDays,
+      delayHours: safeHours,
+      delayMinutesPart: safeMinutes,
       editPassword,
       stampDataUrl,
       stampTemplate,
@@ -472,6 +485,7 @@ export default function SendLetter({
     }
 
     const now = new Date().toISOString()
+    const { safeDays, safeHours, safeMinutes } = getSafeDelayParts()
     const draftRecord: DraftRecord = {
       id: editingDraftId || (crypto.randomUUID ? crypto.randomUUID() : `draft_${Date.now()}`),
       title: titleInput.trim() || `${formData.senderName || '未命名'}→${formData.recipientName || '未命名'}`,
@@ -480,9 +494,9 @@ export default function SendLetter({
       updatedAt: now,
       payload: {
         formData,
-        delayDays,
-        delayHours,
-        delayMinutesPart,
+        delayDays: safeDays,
+        delayHours: safeHours,
+        delayMinutesPart: safeMinutes,
         editPassword,
         stampDataUrl,
         stampTemplate,
@@ -721,10 +735,11 @@ export default function SendLetter({
       formDataToSend.append('senderName', formData.senderName)
       formDataToSend.append('recipientName', formData.recipientName)
       formDataToSend.append('letterContent', formData.letterContent)
+      const { safeDays, safeHours, safeMinutes } = getSafeDelayParts()
       formDataToSend.append('delayMinutes', getDelayMinutes().toString())
-      formDataToSend.append('delayDays', delayDays.toString())
-      formDataToSend.append('delayHours', delayHours.toString())
-      formDataToSend.append('delayMinutesPart', delayMinutesPart.toString())
+      formDataToSend.append('delayDays', safeDays.toString())
+      formDataToSend.append('delayHours', safeHours.toString())
+      formDataToSend.append('delayMinutesPart', safeMinutes.toString())
       formDataToSend.append('editPassword', editPassword)
       formDataToSend.append('paperTheme', paperTheme)
       formDataToSend.append('ambienceMusic', ambienceMusic ? 'true' : 'false')
@@ -1222,8 +1237,15 @@ export default function SendLetter({
                 max={30}
                 value={delayDays}
                 onChange={(e) => {
-                  const value = Number.parseInt(e.target.value || '0', 10)
-                  setDelayDays(Math.max(0, Math.min(30, Number.isFinite(value) ? value : 0)))
+                  const nextValue = e.target.value
+                  if (nextValue === '') {
+                    setDelayDays('')
+                    return
+                  }
+                  const parsed = Number.parseInt(nextValue, 10)
+                  if (Number.isFinite(parsed)) {
+                    setDelayDays(parsed)
+                  }
                 }}
                 className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
               />
@@ -1236,8 +1258,15 @@ export default function SendLetter({
                 max={23}
                 value={delayHours}
                 onChange={(e) => {
-                  const value = Number.parseInt(e.target.value || '0', 10)
-                  setDelayHours(Math.max(0, Math.min(23, Number.isFinite(value) ? value : 0)))
+                  const nextValue = e.target.value
+                  if (nextValue === '') {
+                    setDelayHours('')
+                    return
+                  }
+                  const parsed = Number.parseInt(nextValue, 10)
+                  if (Number.isFinite(parsed)) {
+                    setDelayHours(parsed)
+                  }
                 }}
                 className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
               />
@@ -1250,8 +1279,15 @@ export default function SendLetter({
                 max={59}
                 value={delayMinutesPart}
                 onChange={(e) => {
-                  const value = Number.parseInt(e.target.value || '0', 10)
-                  setDelayMinutesPart(Math.max(0, Math.min(59, Number.isFinite(value) ? value : 0)))
+                  const nextValue = e.target.value
+                  if (nextValue === '') {
+                    setDelayMinutesPart('')
+                    return
+                  }
+                  const parsed = Number.parseInt(nextValue, 10)
+                  if (Number.isFinite(parsed)) {
+                    setDelayMinutesPart(parsed)
+                  }
                 }}
                 className="w-full px-4 py-2 border-2 border-indigo-300 rounded-lg bg-white focus:outline-none focus:border-indigo-600"
               />
